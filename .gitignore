@@ -2,5 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
-*.Rproj
+./data/de_DE/*
+./data/fi_FI/*
+./data/ru_RU/*
 
