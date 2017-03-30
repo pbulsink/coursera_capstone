@@ -2,7 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
-./data/de_DE/*
-./data/fi_FI/*
-./data/ru_RU/*
+
+*.txt
 
