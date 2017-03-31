@@ -1,0 +1,113 @@
+---
+title: "Data Exploration - Coursera Data Science Capstone"
+author: "Phil Bulsink"
+date: "April 30, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(R.utils)
+library(tm)
+```
+
+The Coursera Data Science program has a final major capstone project, where we use provied data to produce predictions akin to those found on cell phone keyboards. This predicts the next word based on the previous word(s) typed by the user. 
+
+This first report outlines the data exploration and initial development perfomred for this purpose
+
+#Data Acquisition
+Data can be downloaded from the following source and unpacked for analysis. The download is quite large, and takes significant space when unpacked, so chose a working directory suitable for that purpose.
+
+```{r getfiles, echo=TRUE, eval=FALSE}
+#NOT RUN
+url<-"https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+download.file(url, "./Coursera-SwiftKey.zip")
+unzip("./Coursera-SwiftKey.zip", exdir = ".")
+file.rename("./final", "./data")
+```
+
+With the file downloaded and extracted, we can see that it has three large english text files (as well as Russian, Finish, and German language files). We'll leave them, it could be interesting to play with them later. These files are compiled blog posts, news reports, and Twitter tweets 
+
+Our text files are quite big:
+```{r filesize}
+#file.size/1000000 to get MB
+file.size(c("./data/en_US/en_US.blogs.txt", "./data/en_US/en_US.news.txt", "./data/en_US/en_US.twitter.txt"))/1000000
+```
+
+So with three files near 200 MB each, we should perform some subsetting for our exploratory work. We'll open a pointer to each file, then see how many lines they have. The [R.utils](https://cran.r-project.org/package=R.utils) package makes this easier.
+```{r file_explore}
+library(R.utils)
+c_blogs<-file("./data/en_US/en_US.blogs.txt")
+c_news<-file("./data/en_US/en_US.news.txt")
+c_twitter<-file("./data/en_US/en_US.twitter.txt")
+en_blogs<-readLines(c_blogs, skipNul = TRUE)
+en_news<-readLines(c_news)
+en_twitter<-readLines(c_twitter, skipNul = TRUE)
+blogs_lines<-length(en_blogs)
+news_lines<-length(en_news)
+twitter_lines<-length(en_twitter)
+```
+
+Trouble with At the Spice Merchant, a 2-ounce bag of tea leaves capable of producing 1
+
+
+So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 10% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
+
+```{r subset}
+set.seed(1)
+en_blogs<en_blogs[sample(c(1:blogs_lines), blogs_lines/10)]
+en_news<-en_news[sample(c(1:news_lines), news_lines/10)]
+en_twitter<-en_twitter[sample(c(1:twitter_lines), twitter_lines/10)]
+```
+
+With the data loaded, we can close our file connections:
+```{r close_con}
+close(c_blogs)
+close(c_news)
+close(c_twitter)
+```
+
+#Data Exploration
+One of the things we will be doing is building 'n-gram' models. However, they should be built once the data is cleaned. To clean the data effectively, we'll use the [`tm`](https://cran.r-project.org/package=tm) package in R. We'll clean, then discuss the cleaning and compare to other language processing that may be utilized in other situations.
+
+```{r tm_work}
+library(tm)
+
+#Create a 'Corpus' of words
+corpus_blogs<-Corpus(VectorSource(en_blogs))
+
+#Process that corpus to remove capitalization, numbers, punctuation, and extra whitespace.
+corpus_blogs <- tm_map(corpus_blogs, content_transformer(tolower))
+corpus_blogs <- tm_map(corpus_blogs, removeNumbers) 
+corpus_blogs <- tm_map(corpus_blogs, removePunctuation)
+corpus_blogs <- tm_map(corpus_blogs, stripWhitespace)
+
+#Get a 'bad words' list to remove from the corpus
+badwords_url<-"https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
+badwords<-unlist(strsplit(RCurl::getURL(badwords_url), "\n"))
+#last 'bad word' is an emoji, remove
+badwords<-badwords[1:length(badwords)-1]
+corpus_blogs <- tm_map(corpus_blogs, removeWords, badwords)
+```
+
+I do the same to the news and twitter files.
+
+```{r hidden_tm_work, echo=FALSE}
+corpus_news<-Corpus(VectorSource(en_news))
+corpus_twitter<-Corpus(VectorSource(en_twitter))
+
+corpus_news <- tm_map(corpus_news, content_transformer(tolower))
+corpus_news <- tm_map(corpus_news, removeNumbers) 
+corpus_news <- tm_map(corpus_news, removePunctuation)
+corpus_news <- tm_map(corpus_news, stripWhitespace)
+corpus_news <- tm_map(corpus_news, removeWords, badwords)
+
+corpus_twitter <- tm_map(corpus_twitter, content_transformer(tolower))
+corpus_twitter <- tm_map(corpus_twitter, removeNumbers) 
+corpus_twitter <- tm_map(corpus_twitter, removePunctuation)
+corpus_twitter <- tm_map(corpus_twitter, stripWhitespace)
+corpus_twitter <- tm_map(corpus_twitter, removeWords, badwords)
+```
+
+So what all happened there? We converted all of the text to lower case, took out numbers, removed punctuatoin, and took out extra whitespaces (new lines, tabs, etc). We also downloaded a curated list of bad words from GitHub and used that to clean up our corpus. We don't want to predicting swear words. 
+
