@@ -9,6 +9,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(R.utils)
 library(tm)
+library(syuzhet)
+library(ggplot2)
+library(wordcloud)
+library(syuzhet)
+library(topicmodels)
+library(NLP)
+library(RWeka)
 ```
 
 The Coursera Data Science program has a final major capstone project, where we use provied data to produce predictions akin to those found on cell phone keyboards. This predicts the next word based on the previous word(s) typed by the user. 
@@ -23,7 +30,8 @@ Data can be downloaded from the following source and unpacked for analysis. The 
 url<-"https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
 download.file(url, "./Coursera-SwiftKey.zip")
 unzip("./Coursera-SwiftKey.zip", exdir = ".")
-file.rename("./final", "./data")
+dir.create("./data")
+file.rename("./final/", "./data/")
 ```
 
 With the file downloaded and extracted, we can see that it has three large english text files (as well as Russian, Finish, and German language files). We'll leave them, it could be interesting to play with them later. These files are compiled blog posts, news reports, and Twitter tweets 
@@ -41,21 +49,18 @@ c_blogs<-file("./data/en_US/en_US.blogs.txt")
 c_news<-file("./data/en_US/en_US.news.txt")
 c_twitter<-file("./data/en_US/en_US.twitter.txt")
 en_blogs<-readLines(c_blogs, skipNul = TRUE)
-en_news<-readLines(c_news)
+en_news<-readLines(c_news, skipNul = TRUE)
 en_twitter<-readLines(c_twitter, skipNul = TRUE)
 blogs_lines<-length(en_blogs)
 news_lines<-length(en_news)
 twitter_lines<-length(en_twitter)
 ```
 
-Trouble with At the Spice Merchant, a 2-ounce bag of tea leaves capable of producing 1
-
-
 So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 10% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
 
 ```{r subset}
 set.seed(1)
-en_blogs<en_blogs[sample(c(1:blogs_lines), blogs_lines/10)]
+en_blogs<-en_blogs[sample(c(1:blogs_lines), blogs_lines/10)]
 en_news<-en_news[sample(c(1:news_lines), news_lines/10)]
 en_twitter<-en_twitter[sample(c(1:twitter_lines), twitter_lines/10)]
 ```
@@ -76,8 +81,13 @@ library(tm)
 #Create a 'Corpus' of words
 corpus_blogs<-Corpus(VectorSource(en_blogs))
 
-#Process that corpus to remove capitalization, numbers, punctuation, and extra whitespace.
+#Create a function to remove urls:
+#from: https://stackoverflow.com/questions/41109773/gsub-function-in-tm-package-to-remove-urls-does-not-remove-the-entire-string 
+removeURL <- function(x) gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", x)
+
+#Process that corpus to remove capitalization, websites, numbers, punctuation, and extra whitespace.
 corpus_blogs <- tm_map(corpus_blogs, content_transformer(tolower))
+corpus_blogs <- tm_map(corpus_blogs, removeURL)
 corpus_blogs <- tm_map(corpus_blogs, removeNumbers) 
 corpus_blogs <- tm_map(corpus_blogs, removePunctuation)
 corpus_blogs <- tm_map(corpus_blogs, stripWhitespace)
@@ -90,24 +100,139 @@ badwords<-badwords[1:length(badwords)-1]
 corpus_blogs <- tm_map(corpus_blogs, removeWords, badwords)
 ```
 
-I do the same to the news and twitter files.
+So what all happened there? We converted all of the text to lower case, took out urls and numbers, removed punctuation, and took out extra whitespaces (new lines, tabs, etc). We also downloaded a curated list of bad words from GitHub and used that to clean up our corpus. We don't want to predicting swear words. 
 
-```{r hidden_tm_work, echo=FALSE}
-corpus_news<-Corpus(VectorSource(en_news))
-corpus_twitter<-Corpus(VectorSource(en_twitter))
+Our Twitter data will likely have some extra 'twitter speak' in it, such as 'RT', @usernames, and 'via @username`. We'll write some regex to get those last two items and apply them to Twitter:
 
-corpus_news <- tm_map(corpus_news, content_transformer(tolower))
-corpus_news <- tm_map(corpus_news, removeNumbers) 
-corpus_news <- tm_map(corpus_news, removePunctuation)
-corpus_news <- tm_map(corpus_news, stripWhitespace)
-corpus_news <- tm_map(corpus_news, removeWords, badwords)
+```{r regex_twitter}
+removeVia <- function(x) gsub("via\\s*@[a-z_]{1,20}","", x)
+removeUsernames <- function(x) gsub("\\s@[a-z_]{1,20}", "", x)
 
+corpus_twitter <- Corpus(VectorSource(en_twitter))
 corpus_twitter <- tm_map(corpus_twitter, content_transformer(tolower))
+corpus_twitter <- tm_map(corpus_twitter, removeURL)
+corpus_twitter <- tm_map(corpus_twitter, removeVia)
+corpus_twitter <- tm_map(corpus_twitter, removeUsernames)
 corpus_twitter <- tm_map(corpus_twitter, removeNumbers) 
 corpus_twitter <- tm_map(corpus_twitter, removePunctuation)
 corpus_twitter <- tm_map(corpus_twitter, stripWhitespace)
 corpus_twitter <- tm_map(corpus_twitter, removeWords, badwords)
+corpus_twitter <- tm_map(corpus_twitter, removeWords, c("rt"))
 ```
 
-So what all happened there? We converted all of the text to lower case, took out numbers, removed punctuatoin, and took out extra whitespaces (new lines, tabs, etc). We also downloaded a curated list of bad words from GitHub and used that to clean up our corpus. We don't want to predicting swear words. 
+I do the same to the news file.
 
+```{r hidden_tm_work, include=FALSE}
+corpus_news <- Corpus(VectorSource(en_news))
+
+corpus_news <- tm_map(corpus_news, content_transformer(tolower))
+corpus_news <- tm_map(corpus_news, removeURL)
+corpus_news <- tm_map(corpus_news, removeNumbers) 
+corpus_news <- tm_map(corpus_news, removePunctuation)
+corpus_news <- tm_map(corpus_news, stripWhitespace)
+corpus_news <- tm_map(corpus_news, removeWords, badwords)
+```
+```{r clean, include=FALSE}
+rm(en_news, en_twitter, blogs_lines, news_lines, twitter_lines, c_blogs, c_news, c_twitter, badwords, badwords_url)
+gc()
+```
+After all of that work, there might be empty rows of data (think of a tweet just mentioning people and sharing a link). We'll remove them now:
+```{r empty_data}
+#from https://stackoverflow.com/questions/13944252/remove-empty-documents-from-documenttermmatrix-in-r-topicmodels
+dtm_bl<-DocumentTermMatrix(corpus_blogs)
+dtm_nw<-DocumentTermMatrix(corpus_news)
+dtm_tw<-DocumentTermMatrix(corpus_twitter)
+
+good_rows_bl <- dtm_bl[unique(dtm_bl$i), ]$dimnames[1][[1]]
+corpus_blogs <- corpus_blogs[as.numeric(good_rows_bl)]
+
+good_rows_nw <- dtm_nw[unique(dtm_nw$i), ]$dimnames[1][[1]]
+corpus_news <- corpus_news[as.numeric(good_rows_nw)]
+
+good_rows_tw <- dtm_tw[unique(dtm_tw$i), ]$dimnames[1][[1]]
+corpus_twitter <- corpus_twitter[as.numeric(good_rows_tw)]
+```
+
+#Data Processing Options
+Typical text processing begins to diverge from this point. Sometimes, you may be interested in removing all of the common words such as 'a', 'an', 'the', 'not', 'is' ... etc. These are called 'stopwords', and are easily removed with `tm_map(Corpus, removeWords, stopwords(language = 'en'))`. This won't work for us, as we want to know when to predict a stopword. Another manipulation to the text is called 'stemming', where words are shortened to their prefix base. For example, 'analyse', 'analysis', 'analysing', and 'analyzed' would all be turned into 'analys', allowing for analysis not dependant on plurality, temporal (past/future/present) or other effects. 
+
+##Sentiments
+In terms of analysis, one can do 'sentiment analysis' and look at the texts, pulling out words that imply happiness, sadness, anger, etc. This can be done with the R package [`syuzhet`](https://cran.r-project.org/package=syuzhet) quite easily, so I'll demonstrate with the blogs data:
+```{r sentiment}
+library(syuzhet)
+sentiments<-get_nrc_sentiment(en_blogs)
+sentimentTotals <- data.frame("count" = colSums(sentiments))
+sentimentTotals$sentiment<-rownames(sentimentTotals)
+rownames(sentimentTotals)<-NULL
+
+ggplot(data=sentimentTotals, aes(x=sentiment, y=count)) +
+    geom_bar(aes(fill=sentiment), stat='identity') +
+    theme_bw() + theme(legend.position = 'none', axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+    ggtitle("Sentiment Counts for Blogs") + xlab("Sentiment") + ylab("Total Count")
+```
+```{r clean1, include=FALSE}
+rm(en_blogs, sentiments, sentimentTotals)
+rm(dtm_bl, dtm_nw, dtm_tw, good_rows_tw, good_rows_nw, good_rows_bl)
+gc()
+```
+
+##Word Clouds
+Similarly, wordclouds are popular yet powerful visual tools for analyzing data. We'll make a wordcloud for Twitter with the [`wordcloud`](https://cran.r-project.org/package=wordcloud) package. This works better after removing stopwords, and stemming the tweets. I'll pull a few extra stopwords out too, as some don't make it out due to our preprocessing removing punctuation or they're not in the base stopwords list.
+
+```{r wordcloud}
+wordcloud_corp_tw<-tm_map(corpus_twitter, removeWords, c(stopwords('en'), 'ill', 'dont', 'cant', 'wont', 'ive', 'will'))
+wordcloud_corp_tw<-tm_map(wordcloud_corp_tw, stemDocument)
+
+library(wordcloud)
+wordcloud(wordcloud_corp_tw, max.words = 100, random.order = FALSE, colors = brewer.pal(9, 'PuBuGn'))
+```
+
+```{r clean2, include=FALSE}
+rm(wordcloud_corp_tw)
+```
+
+##Topic Models
+Yet another analysis is topic modelling. This is done using a technique known as Latent Dirichlet Allocation. This is available in a few packages, but we'll use [`topicmodels`](https://cran.r-project.org/package=topicmodels). Again, this requires removing stopwords and stemming, but then we create a Document Term Matrix, which lists Documents and term (words) as two axes, and indicates in a matrix when a term exists in the document. Term Document Matrices are the transposition of these document term matrices. We'll do this with the news corpus.
+```{r lda eval=FALSE}
+lda_corp_news<-tm_map(corpus_news, removeWords, c(stopwords('en'), 'ill', 'dont', 'cant', 'wont', 'ive', 'will'))
+lda_corp_news<-tm_map(lda_corp_news, stemDocument)
+
+#Create document-term matrix
+dtm <- DocumentTermMatrix(lda_corp_news)
+dtm <- dtm[unique(dtm$i), ]
+
+#with help from https://eight2late.wordpress.com/2015/09/29/a-gentle-introduction-to-topic-modeling-using-r/
+library(topicmodels)
+
+#Set parameters for model
+burnin <- 4000
+iter <- 2000
+thin <- 500
+seed <-list(1,2,3,4,5)
+nstart <- 5
+best <- TRUE
+
+#Number of topics
+k <- 5
+
+lda_out <-LDA(dtm,k, method="Gibbs", control=list(nstart=nstart, seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
+
+```
+
+#N-Gram models
+Back to the prblem at hand. We want to produce [n-gram models]() of our data. That is, we want to know what words are commonly grouped together. This could be words pairs, triplets, or 'n'lets. This is possible with the [`RWeka`](https://cran.r-project.org/package=RWeka) package, used as a tokenizer function while making a term-document matrix. RWeka
+
+```{r n_gram}
+#From the tm FAQ: http://tm.r-forge.r-project.org/faq.html
+library(RWeka)
+bigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+trigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+fourgramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 4, max = 4))
+
+tdm2_bl <- TermDocumentMatrix(corpus_blogs, control = list(tokenize = bigramTokenizer))
+tdm3_bl <- TermDocumentMatrix(corpus_blogs, control = list(tokenize = trigramTokenizer))
+tdm4_bl <- TermDocumentMatrix(corpus_blogs, control = list(tokenize = fourgramTokenizer))
+```
+
+THis doesn't wanna work. Let's retry with quanteda

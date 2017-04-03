@@ -1,0 +1,193 @@
+---
+title: "Data Exploration - Coursera Data Science Capstone"
+author: "Phil Bulsink"
+date: "April 30, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(R.utils)
+library(syuzhet)
+library(ggplot2)
+library(wordcloud)
+library(syuzhet)
+library(topicmodels)
+library(quanteda)
+```
+
+The Coursera Data Science program has a final major capstone project, where we use provied data to produce predictions akin to those found on cell phone keyboards. This predicts the next word based on the previous word(s) typed by the user. 
+
+This first report outlines the data exploration and initial development perfomred for this purpose
+
+#Data Acquisition
+Data can be downloaded from the following source and unpacked for analysis. The download is quite large, and takes significant space when unpacked, so chose a working directory suitable for that purpose.
+
+```{r getfiles, echo=TRUE, eval=FALSE}
+#NOT RUN
+url<-"https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+download.file(url, "./Coursera-SwiftKey.zip")
+unzip("./Coursera-SwiftKey.zip", exdir = ".")
+dir.create("./data")
+file.rename("./final/", "./data/")
+```
+
+With the file downloaded and extracted, we can see that it has three large english text files (as well as Russian, Finish, and German language files). We'll leave them, it could be interesting to play with them later. These files are compiled blog posts, news reports, and Twitter tweets 
+
+Our text files are quite big:
+```{r filesize}
+#file.size/1000000 to get MB
+file.size(c("./data/en_US/en_US.blogs.txt", "./data/en_US/en_US.news.txt", "./data/en_US/en_US.twitter.txt"))/1000000
+```
+
+So with three files near 200 MB each, we should perform some subsetting for our exploratory work. We'll open a pointer to each file, then see how many lines they have. The [R.utils](https://cran.r-project.org/package=R.utils) package makes this easier.
+```{r file_explore}
+library(R.utils)
+c_blogs<-file("./data/en_US/en_US.blogs.txt")
+c_news<-file("./data/en_US/en_US.news.txt")
+c_twitter<-file("./data/en_US/en_US.twitter.txt")
+en_blogs<-readLines(c_blogs, skipNul = TRUE)
+en_news<-readLines(c_news, skipNul = TRUE)
+en_twitter<-readLines(c_twitter, skipNul = TRUE)
+blogs_lines<-length(en_blogs)
+news_lines<-length(en_news)
+twitter_lines<-length(en_twitter)
+```
+With the data loaded, we can close our file connections:
+```{r close_con}
+close(c_blogs)
+close(c_news)
+close(c_twitter)
+```
+
+So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 10% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
+
+```{r subset}
+set.seed(1)
+fraction<-0.1
+en_blogs<-en_blogs[sample(c(1:blogs_lines), blogs_lines*fraction)]
+en_news<-en_news[sample(c(1:news_lines), news_lines*fraction)]
+en_twitter<-en_twitter[sample(c(1:twitter_lines), twitter_lines*fraction)]
+```
+
+#Data Exploration
+One of the things we will be doing is building 'n-gram' models. However, they should be built once the data is cleaned. To clean the data effectively, we'll use the [`tm`](https://cran.r-project.org/package=tm) package in R. We'll clean, then discuss the cleaning and compare to other language processing that may be utilized in other situations.
+
+```{r cleanup_example}
+library(quanteda)
+
+#Prepare the text data
+#set to lowercase
+en_blogs <- char_tolower(en_blogs)
+
+#Remove URLS
+en_blogs <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_blogs)
+
+#Remove Twitter 'Via @username' and '@usernames'
+en_blogs <- gsub("via\\s*@[a-z_]{1,20}","", en_blogs)
+en_blogs <- gsub("\\s@[a-z_]{1,20}", "", en_blogs)
+
+#Get a 'bad words' list to remove from the corpus
+badwords_url <- "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
+badwords <- unlist(strsplit(RCurl::getURL(badwords_url), "\n"))
+#last 'bad word' is an emoji, remove
+badwords <- badwords[1:length(badwords)-1]
+#replacement builder code from getAnywhere(tm::removeWords.character)
+en_blogs <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_blogs, perl = TRUE)
+
+#gsub(sprintf("(*UCP)\\b(%s)\\b", paste(stopwords("en"), collapse = "|")), "", en_blogs, perl = TRUE)
+```
+
+So what all happened there? We converted all of the text to lower case, then took out urls and bad words. We removed some Twitter noise (usernames and 'via @usernames'). We'll do the same to the other text inputs in the background.
+
+```{r silent_process, include=FALSE}
+en_news <- char_tolower(en_news)
+en_news <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_news)
+en_news <- gsub("via\\s*@[a-z_]{1,20}","", en_news)
+en_news <- gsub("\\s@[a-z_]{1,20}", "", en_news)
+en_news <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_news, perl = TRUE)
+en_twitter <- char_tolower(en_news)
+en_twitter <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_twitter)
+en_twitter <- gsub("via\\s*@[a-z_]{1,20}","", en_twitter)
+en_twitter <- gsub("\\s@[a-z_]{1,20}", "", en_twitter)
+en_twitter <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_twitter, perl = TRUE)
+```
+
+Now onto the next step, where we really get into the text analysis with `quanteda`.
+
+```{r corpus}
+#Create a 'Corpus' of words
+corpus_blog <- corpus(en_blogs)
+corpus_news <- corpus(en_news)
+corpus_twitter <- corpus(en_twitter)
+
+docnames(corpus_blog) <- paste('blog',1:ndoc(corpus_blog))
+docnames(corpus_news) <- paste('news',1:ndoc(corpus_news))
+docnames(corpus_twitter) <- paste('tweet',1:ndoc(corpus_twitter))
+
+corpus_tot <- corpus_blog+corpus_news+corpus_twitter
+
+dfm1 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=1)
+dfm2 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=2)
+dfm3 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=3)
+dfm4 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=4)
+```
+
+We then turned the blog, news and twitter data into corpuses, and assigned docnames corresponding to each, then combined them to one corpus. We then produced document feature matrices, or term document matrices, and in doing so breaking each document up into 1-, 2-, 3- and 4-gram chunks (eg for the string: "I want to go.", the 3-grams are "I want to" and "want to go."). While doing so, we cleaned out any numbers, punctuation, symbols, separators, and missed urls or twitter crud.  With this, we can see which n-grams are the most popular! 
+
+```{r clean0, include=FALSE}
+rm(en_twitter, en_news, c_blogs, c_news, c_twitter, corpus_bl, corpus_nw, corpus_tw, badwords, badwords_url, blogs_lines, news_lines, twitter_lines, fraction)
+gc()
+```
+```{r topfeatures}
+topfeatures(dfm3)
+```
+
+Similarly, the single most common 4-gram from the blogs set is "`r names(topfeatures(dfm4)[1])`". Seems a bit... pessimistic.
+
+#Data Processing Options
+Typical text processing begins to diverge from this point. Sometimes, you may be interested in removing all of the common words such as 'a', 'an', 'the', 'not', 'is' ... etc. These are called 'stopwords', and are easily removed in the dfm creatin with the  `dfm(remove = stopwords())`. This won't work for us, as we want to know when to predict a stopword. Another manipulation to the text is called 'stemming', where words are shortened to their prefix base. For example, 'analyse', 'analysis', 'analysing', and 'analyzed' would all be turned into 'analys', allowing for analysis not dependant on plurality, temporal (past/future/present) or other effects. Again, this would have been easy as `dfm(stem = TRUE)` but we want to predict the full word in our tool. 
+
+There's a few other interesting analysis we can do with text data if we want:
+
+##Sentiments
+In terms of analysis, one can do 'sentiment analysis' and look at the texts, pulling out words that imply happiness, sadness, anger, etc. This can be done with the R package [`syuzhet`](https://cran.r-project.org/package=syuzhet) quite easily, so I'll demonstrate with the blogs data:
+```{r sentiment}
+library(syuzhet)
+sentiments <- get_nrc_sentiment(en_blogs)
+sentimentTotals <- data.frame("count" = colSums(sentiments))
+sentimentTotals$sentiment <- rownames(sentimentTotals)
+rownames(sentimentTotals) <- NULL
+
+ggplot(data=sentimentTotals, aes(x=sentiment, y=count)) +
+    geom_bar(aes(fill=sentiment), stat='identity') +
+    theme_bw() + theme(legend.position = 'none', axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+    ggtitle("Sentiment Counts for Blogs") + xlab("Sentiment") + ylab("Total Count")
+```
+```{r clean1, include=FALSE}
+rm(en_blogs, sentiments, sentimentTotals)
+gc()
+```
+
+##Word Clouds
+
+http://quanteda.io/reference/textplot_wordcloud.html
+
+Similarly, wordclouds are popular yet powerful visual tools for analyzing data. We'll make a wordcloud for Twitter with the built in `textplot_wordcloud` function, which interfaces to the [`wordcloud`](https://cran.r-project.org/package=wordcloud) package. This works better after removing stopwords, and stemming the tweets. I'll pull a few extra stopwords out too, as some don't make it out due to our preprocessing removing punctuation or they're not in the base stopwords list.
+
+```{r wordcloud}
+wordcloud_dfm<-dfm(corpus_tot, remove=stopwords('english'), stem=TRUE, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE)
+
+textplot_wordcloud(wordcloud_dfm, max.words = 100, random.order = FALSE, colors = brewer.pal(9, 'PuBuGn'))
+```
+
+```{r clean2, include=FALSE}
+rm(wordcloud_dfm)
+```
+
+#N-Gram models
+Back to the prblem at hand. With our n-gram models, we'll want to be able to predict which words come next after a user has entered a few words. Things like 'I want to go to the ...' should result in proposed words such as 'store', 'park', 'mall'. We can do this by manipulating our n-gram data. 
+
+```{r n_gram}
+
+```
