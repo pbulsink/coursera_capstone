@@ -10,10 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(R.utils)
 library(syuzhet)
 library(ggplot2)
-library(wordcloud)
-library(syuzhet)
-library(topicmodels)
 library(quanteda)
+library(stringr)
 ```
 
 The Coursera Data Science program has a final major capstone project, where we use provied data to produce predictions akin to those found on cell phone keyboards. This predicts the next word based on the previous word(s) typed by the user. 
@@ -60,11 +58,11 @@ close(c_news)
 close(c_twitter)
 ```
 
-So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 10% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
+So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 5% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
 
 ```{r subset}
 set.seed(1)
-fraction<-0.1
+fraction<-0.05
 en_blogs<-en_blogs[sample(c(1:blogs_lines), blogs_lines*fraction)]
 en_news<-en_news[sample(c(1:news_lines), news_lines*fraction)]
 en_twitter<-en_twitter[sample(c(1:twitter_lines), twitter_lines*fraction)]
@@ -106,7 +104,7 @@ en_news <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_news)
 en_news <- gsub("via\\s*@[a-z_]{1,20}","", en_news)
 en_news <- gsub("\\s@[a-z_]{1,20}", "", en_news)
 en_news <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_news, perl = TRUE)
-en_twitter <- char_tolower(en_news)
+en_twitter <- char_tolower(en_twitter)
 en_twitter <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_twitter)
 en_twitter <- gsub("via\\s*@[a-z_]{1,20}","", en_twitter)
 en_twitter <- gsub("\\s@[a-z_]{1,20}", "", en_twitter)
@@ -178,7 +176,7 @@ Similarly, wordclouds are popular yet powerful visual tools for analyzing data. 
 ```{r wordcloud}
 wordcloud_dfm<-dfm(corpus_tot, remove=stopwords('english'), stem=TRUE, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE)
 
-textplot_wordcloud(wordcloud_dfm, max.words = 100, random.order = FALSE, colors = brewer.pal(9, 'PuBuGn'))
+textplot_wordcloud(wordcloud_dfm, max.words = 100, random.order = FALSE, colors = RColorBrewer::brewer.pal(9, 'PuBuGn'))
 ```
 
 ```{r clean2, include=FALSE}
@@ -188,6 +186,36 @@ rm(wordcloud_dfm)
 #N-Gram models
 Back to the prblem at hand. With our n-gram models, we'll want to be able to predict which words come next after a user has entered a few words. Things like 'I want to go to the ...' should result in proposed words such as 'store', 'park', 'mall'. We can do this by manipulating our n-gram data. 
 
+We'll split our n-grams to the n-1 and 1-gram components. For a 4-gram "I want to go", that will be split to "I want to" and "go". We can then compare our counts of "go" to "eat" and "sleep" and any other combinations we saw in the corpus. The [`stringr`](https://cran.r-project.org/package=wordcloud) package will help here. I've made a function called 'splitGrams' that takes our document feature matrices as input, and provides a 
+
 ```{r n_gram}
+library(stringr)
+
+splitGrams<-function(docfeatmatrix){
+    freq_table<-colSums(docfeatmatrix)
+    grams<-colnames(docfeatmatrix)
+    n<-length(strsplit(grams[1], split = '_')[[1]])
+    if (n > 1){
+        grams<-str_split_fixed(grams, "_", n)
+        gram_table<-data.frame(pregram=apply(grams, 1, function(x) paste(x[1:n-1], collapse = ' ')), postgram=grams[,n], count=freq_table, stringsAsFactors = FALSE)
+    }
+    else if (n == 1){
+        gram_table<-data.frame(pregram = grams, count = freq_table, stringsAsFactors = FALSE)
+    }
+    else{
+        stop("n-gram input not valid - < 1 n-gram length")
+    }
+    rm(grams, freq_table, n)
+    gram_table<-gram_table[order(gram_table$pregram, gram_table$count),]
+    rownames(gram_table)<-NULL
+    return(gram_table)
+}
+
+gt1<-splitGrams(dfm1)
+gt2<-splitGrams(dfm2)
+gt3<-splitGrams(dfm3)
+gt4<-splitGrams(dfm4)
 
 ```
+
+With our gram populatiry now calculated, we can look at our top for each n.
