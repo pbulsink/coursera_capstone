@@ -11,6 +11,7 @@ library(R.utils)
 library(syuzhet)
 library(ggplot2)
 library(quanteda)
+library(stringi)
 library(stringr)
 ```
 
@@ -73,17 +74,23 @@ One of the things we will be doing is building 'n-gram' models. However, they sh
 
 ```{r cleanup_example}
 library(quanteda)
+library(stringi)
 
 #Prepare the text data
+#Fix accented characters (Not applicable for other languages) & some symbols associated
+en_blogs <- stri_trans_general(en_blogs,"Latin-ASCII")
+en_blogs <- gsub("[µºˆ_]+", '', en_blogs)
+
 #set to lowercase
 en_blogs <- char_tolower(en_blogs)
 
 #Remove URLS
-en_blogs <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_blogs)
+en_blogs <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", en_blogs)
 
 #Remove Twitter 'Via @username' and '@usernames'
 en_blogs <- gsub("via\\s*@[a-z_]{1,20}","", en_blogs)
 en_blogs <- gsub("\\s@[a-z_]{1,20}", "", en_blogs)
+en_blogs <- gsub("\\brt\\b", "", en_blogs)
 
 #Get a 'bad words' list to remove from the corpus
 badwords_url <- "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
@@ -96,18 +103,24 @@ en_blogs <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "
 #gsub(sprintf("(*UCP)\\b(%s)\\b", paste(stopwords("en"), collapse = "|")), "", en_blogs, perl = TRUE)
 ```
 
-So what all happened there? We converted all of the text to lower case, then took out urls and bad words. We removed some Twitter noise (usernames and 'via @usernames'). We'll do the same to the other text inputs in the background.
+So what all happened there? We converted all of the text to normal ASCII characters (not applicable for languages with accented characters), then to lower case, then took out urls and bad words. We removed some Twitter noise (usernames 'via @usernames', and 'rt' (but not 'rt' from words like 'art')). We'll do the same to the other text inputs in the background.
 
 ```{r silent_process, include=FALSE}
+en_news <- stri_trans_general(en_news,"Latin-ASCII")
+en_news <- gsub("[µºˆ_]+", '', en_news)
 en_news <- char_tolower(en_news)
-en_news <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_news)
+en_news <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", en_news)
 en_news <- gsub("via\\s*@[a-z_]{1,20}","", en_news)
 en_news <- gsub("\\s@[a-z_]{1,20}", "", en_news)
+en_news <- gsub("\\brt\\b", "", en_news)
 en_news <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_news, perl = TRUE)
+en_twitter <- stri_trans_general(en_twitter,"Latin-ASCII")
+en_twitter <- gsub("[µºˆ_]+", '', en_twitter)
 en_twitter <- char_tolower(en_twitter)
-en_twitter <- gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", en_twitter)
+en_twitter <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", en_twitter)
 en_twitter <- gsub("via\\s*@[a-z_]{1,20}","", en_twitter)
 en_twitter <- gsub("\\s@[a-z_]{1,20}", "", en_twitter)
+en_twitter <- gsub("\\brt\\b", "", en_twitter)
 en_twitter <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_twitter, perl = TRUE)
 ```
 
@@ -125,10 +138,10 @@ docnames(corpus_twitter) <- paste('tweet',1:ndoc(corpus_twitter))
 
 corpus_tot <- corpus_blog+corpus_news+corpus_twitter
 
-dfm1 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=1)
-dfm2 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=2)
-dfm3 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=3)
-dfm4 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE, ngrams=4)
+dfm1 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeURL = TRUE, removeTwitter = TRUE, removeHyphens=TRUE, ngrams=1)
+dfm2 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeURL = TRUE, removeTwitter = TRUE, removeHyphens=TRUE, ngrams=2)
+dfm3 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeURL = TRUE, removeTwitter = TRUE, removeHyphens=TRUE, ngrams=3)
+dfm4 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeURL = TRUE, removeTwitter = TRUE, removeHyphens=TRUE, ngrams=4)
 ```
 
 We then turned the blog, news and twitter data into corpuses, and assigned docnames corresponding to each, then combined them to one corpus. We then produced document feature matrices, or term document matrices, and in doing so breaking each document up into 1-, 2-, 3- and 4-gram chunks (eg for the string: "I want to go.", the 3-grams are "I want to" and "want to go."). While doing so, we cleaned out any numbers, punctuation, symbols, separators, and missed urls or twitter crud.  With this, we can see which n-grams are the most popular! 
@@ -144,7 +157,7 @@ topfeatures(dfm3)
 Similarly, the single most common 4-gram from the blogs set is "`r names(topfeatures(dfm4)[1])`". Seems a bit... pessimistic.
 
 #Data Processing Options
-Typical text processing begins to diverge from this point. Sometimes, you may be interested in removing all of the common words such as 'a', 'an', 'the', 'not', 'is' ... etc. These are called 'stopwords', and are easily removed in the dfm creatin with the  `dfm(remove = stopwords())`. This won't work for us, as we want to know when to predict a stopword. Another manipulation to the text is called 'stemming', where words are shortened to their prefix base. For example, 'analyse', 'analysis', 'analysing', and 'analyzed' would all be turned into 'analys', allowing for analysis not dependant on plurality, temporal (past/future/present) or other effects. Again, this would have been easy as `dfm(stem = TRUE)` but we want to predict the full word in our tool. 
+Typical text processing begins to diverge from this point. Sometimes, you may be interested in removing all of the common words such as 'a', 'an', 'the', 'not', 'is' ... etc. These are called 'stopwords', and are easily removed in the dfm creating step with `dfm(remove = stopwords())`. This won't work for us, as we want to know when to predict a stopword. Another manipulation to the text is called 'stemming', where words are shortened to their prefix base. For example, 'analyse', 'analysis', 'analysing', and 'analyzed' would all be turned into 'analys', allowing for analysis not dependant on plurality, temporal (past/future/present) or other effects. Again, this would have been easy as `dfm(stem = TRUE)` but we want to predict the full word in our tool. 
 
 There's a few other interesting analysis we can do with text data if we want:
 
@@ -173,7 +186,7 @@ http://quanteda.io/reference/textplot_wordcloud.html
 
 Similarly, wordclouds are popular yet powerful visual tools for analyzing data. We'll make a wordcloud for Twitter with the built in `textplot_wordcloud` function, which interfaces to the [`wordcloud`](https://cran.r-project.org/package=wordcloud) package. This works better after removing stopwords, and stemming the tweets. I'll pull a few extra stopwords out too, as some don't make it out due to our preprocessing removing punctuation or they're not in the base stopwords list.
 
-```{r wordcloud}
+```{r wordcloud, warning=FALSE}
 wordcloud_dfm<-dfm(corpus_tot, remove=stopwords('english'), stem=TRUE, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeURL = TRUE, removeTwitter = TRUE)
 
 textplot_wordcloud(wordcloud_dfm, max.words = 100, random.order = FALSE, colors = RColorBrewer::brewer.pal(9, 'PuBuGn'))
@@ -186,7 +199,7 @@ rm(wordcloud_dfm)
 #N-Gram models
 Back to the prblem at hand. With our n-gram models, we'll want to be able to predict which words come next after a user has entered a few words. Things like 'I want to go to the ...' should result in proposed words such as 'store', 'park', 'mall'. We can do this by manipulating our n-gram data. 
 
-We'll split our n-grams to the n-1 and 1-gram components. For a 4-gram "I want to go", that will be split to "I want to" and "go". We can then compare our counts of "go" to "eat" and "sleep" and any other combinations we saw in the corpus. The [`stringr`](https://cran.r-project.org/package=wordcloud) package will help here. I've made a function called 'splitGrams' that takes our document feature matrices as input, and provides a 
+We'll split our n-grams to the n-1 and 1-gram components. For a 4-gram "I want to go", that will be split to "I want to" and "go". We can then compare our counts of "go" to "eat" and "sleep" and any other combinations we saw in the corpus. The [`stringr`](https://cran.r-project.org/package=wordcloud) package will help here. I've made a function called 'splitGrams' that takes our document feature matrices as input, and provides a table of 'pregram' values and the expected word after each. 
 
 ```{r n_gram}
 library(stringr)
@@ -208,7 +221,7 @@ splitGrams<-function(docfeatmatrix){
     }
     rm(grams, freq_table, n)
     #fix ordering
-    gram_table<-gram_table[order(gram_table$pregram, gram_table$count, gram_table$postgram),]
+    gram_table<-gram_table[order(gram_table$pregram, -gram_table$count, gram_table$postgram),]
     rownames(gram_table)<-NULL
     return(gram_table)
 }
@@ -220,4 +233,17 @@ gt4<-splitGrams(dfm4)
 
 ```
 
-With our gram populatiry now calculated, we can look at our top for each n.
+With our gram populatiry now calculated, we can look at our top for each n. For example, with our '3-gram' model, we see 'to the' yields:
+
+```{r}
+head(gt3[gt3$pregram == 'to the', ])
+```
+
+Likewise, for our 'go to the ...' case, we get:
+
+```{r} 
+head(gt4[gt4$pregram == 'go to the', ])
+```
+
+These are low frequencies, but using more data should provide better results.
+
