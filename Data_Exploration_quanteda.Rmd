@@ -134,7 +134,7 @@ dfm4 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols 
 We then turned the blog, news and twitter data into corpuses, and assigned docnames corresponding to each, then combined them to one corpus. We then produced document feature matrices, or term document matrices, and in doing so breaking each document up into 1-, 2-, 3- and 4-gram chunks (eg for the string: "I want to go.", the 3-grams are "I want to" and "want to go."). While doing so, we cleaned out any numbers, punctuation, symbols, separators, and missed urls or twitter crud.  With this, we can see which n-grams are the most popular! 
 
 ```{r clean0, include=FALSE}
-rm(en_twitter, en_news, c_blogs, c_news, c_twitter, corpus_bl, corpus_nw, corpus_tw, badwords, badwords_url, blogs_lines, news_lines, twitter_lines, fraction)
+rm(en_twitter, en_news, c_blogs, c_news, c_twitter, corpus_blog, corpus_news, corpus_twitter, badwords, badwords_url, blogs_lines, news_lines, twitter_lines, fraction)
 gc()
 ```
 ```{r topfeatures}
@@ -194,19 +194,21 @@ library(stringr)
 splitGrams<-function(docfeatmatrix){
     freq_table<-colSums(docfeatmatrix)
     grams<-colnames(docfeatmatrix)
-    n<-length(strsplit(grams[1], split = '_')[[1]])
+    grams<-trimws(gsub("_", " ", grams))
+    n<-length(strsplit(grams[1], split = ' ')[[1]])
     if (n > 1){
-        grams<-str_split_fixed(grams, "_", n)
+        grams<-str_split_fixed(grams, ' ', n)
         gram_table<-data.frame(pregram=apply(grams, 1, function(x) paste(x[1:n-1], collapse = ' ')), postgram=grams[,n], count=freq_table, stringsAsFactors = FALSE)
     }
     else if (n == 1){
-        gram_table<-data.frame(pregram = grams, count = freq_table, stringsAsFactors = FALSE)
+        gram_table<-data.frame(pregram = rep(''), postgram=grams, count = freq_table, stringsAsFactors = FALSE)
     }
     else{
-        stop("n-gram input not valid - < 1 n-gram length")
+        stop("n-gram input not valid: < 1 n-gram length")
     }
     rm(grams, freq_table, n)
-    gram_table<-gram_table[order(gram_table$pregram, gram_table$count),]
+    #fix ordering
+    gram_table<-gram_table[order(gram_table$pregram, gram_table$count, gram_table$postgram),]
     rownames(gram_table)<-NULL
     return(gram_table)
 }
