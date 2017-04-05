@@ -1,0 +1,79 @@
+---
+title: "Exploration of R Hash Tables for Quick Lookups"
+author: "Philip Bulsink"
+date: '2017-04-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pryr)
+```
+
+## R Markdown
+
+R lookups of very large data.frames (> 100 million rows) can be slow. For data analysis used for scholarly work or commercial interest, this may be acceptable. However, for an interactive or near-real-time analysis, this is not acceptable. 
+
+In many languages exists a dictionary type object, referencing values by a set unique key. There may be hashing or other techniques running in the background providing this speed. For example, Python dictionary lookups are O(1), while list lookups are O(n). The tradeoff is that dictionaries take more storage space, as the system keeps the hash table only 2/3 full (many references, see: [https://stackoverflow.com/questions/513882/python-list-vs-dict-for-look-up-table]). R does not contain a built in dictionary type, but there is a workaround.
+
+Much of this work is exploring work done by others, such as Jeffrey Horner, and not my own. See [Jeffrey's posts] (http://jeffreyhorner.tumblr.com/post/116325104028/hash-table-performance-in-r-part-ii-in-part-i) about this topic for a better explanation of what is happening.
+
+In the Coursera Data Science Specialization, a significant number of n-grams are produced and stored for use in a prediction model. This needs to be able to look up results quickly, even if the table contains millions of pre-tested n-grams. Having a fast lookup increases the size of the n-gram table we can use, and also allows for n+m-grams (instead of being limited to bigram/trigram). 
+
+For this purpose, the following storage solution is proposed:
+
+| Key | Value |
+|---|---|
+| `pregram` | `list(postgram = frequency, postgram = frequency, ...)` |
+| `go_to_the` | `list('gym'=12, 'beach'=10, 'hospital'=8, 'store'=8)` |
+
+where pregram, postgram, are counts, and frequency is the relative appearance.
+
+R allows for the creation of a hashed environment, where you can put and retrieve items. This is easier to do than it sounds.
+
+```{r}
+HASH_TABLE <- function() new.env()
+INSERT <- function(key, value, ht)  ht[[key]] <- value
+LOOKUP <- function(key, ht) ht[[key]]
+DELETE <- function(key, ht) rm(list=key,envir=ht,inherits=FALSE)
+```
+
+Now, all we need to do is to use these `INSERT`, `LOOKUP`, and (less frequently) `DELETE` functions on our new `HASH_TABLE`.
+
+For example, I'll load a smallish gram table from before:
+```{r}
+gt<-readRDS("./data/en_gt2.RDS")
+```
+
+We can replace the gram table data.frame with an environment table:
+```{r}
+ht<-HASH_TABLE()
+buildGTHash<-function(gt, ht){
+    n<-unique(gt$pregram)
+    pb<-dplyr::progress_estimated(length(n))
+    for(i in 1:length(n)){
+        k<-n[i]
+        x<-gt[gt$pregram == k,]
+        v<-x[,'count']
+        names(v)<-x[,'postgram']
+        INSERT(k, v, ht)
+        pb$tick()$print()
+    } 
+}
+
+GTHash<-function(n, gt, ht){
+    x<-gt[gt$pregam == n,]
+    v<-x[,'count']
+    names(v)<-x['postgram']
+    INSERT(n,v,ht)
+    return(TRUE)
+}
+vGTHash<-Vectorize(FUN = GTHash, vectorize.args = 'n', SIMPLIFY = TRUE, USE.NAMES = FALSE)
+
+#USAGE: vGTHash(unique(gt$pregram), gt, ht)
+```
+
+This takes a while to build, but has an (almost) O(1) lookup speed. As long as we can store our table environment, the model shouldn't be hampered by table size with respect to performance.
+
+R's built in `object.size` function can't look at environments, but the `pryr` package has `object_size()` that can. Our gt2 when tabled is `r object_size(ht2)`
+
