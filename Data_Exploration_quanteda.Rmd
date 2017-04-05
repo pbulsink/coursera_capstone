@@ -246,3 +246,18 @@ These are low frequencies, but using more data should provide better results.
 
 #Model Plan
 With our ngrams, the plan is to produce predictions on what could follow, in much the same way that I have above. When the user provides 'go to the', the model should suggest 'gym', 'beach', 'hospital', etc. If a provided 'n-gram' has not been previously seen, or the count for a specific pregram is very very low, it may be beneficial to test the 'n-1'-gram, i.e., test 'to the' if 'go to the' does not provide enough hits.
+
+#Note:
+These make large data frames.
+
+```{r}
+library(pryr)
+list(gt1=object_size(gt1), gt2=object_size(gt2), gt3=object_size(gt3), gt4=object_size(gt4))
+```
+
+However, they can be quickly cut down in size:
+```{r}
+list(gt2.small=object_size(gt2[gt2$count > 1, ]), gt3.small=object_size(gt3[gt3$count > 1, ]), gt4.small=object_size(gt4[gt4$count > 1, ]))
+```
+
+It may be worth struggling through analysis of larger fractions of the text (25+%) and keeping only count > 1, then building a 'parts of speech' model (eg suggest noun after an adjective, based on noun popularity). Backoff models will help with size reduction as well. Furthermore this would leave room for introduction of Proper Nouns (capitals) as well.
