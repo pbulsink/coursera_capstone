@@ -87,10 +87,11 @@ en_blogs <- char_tolower(en_blogs)
 #Remove URLS
 en_blogs <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", en_blogs)
 
-#Remove Twitter 'Via @username' and '@usernames'
+#Remove Twitter 'Via @username' and '@usernames' and 'rt' and hashtags
 en_blogs <- gsub("via\\s*@[a-z_]{1,20}","", en_blogs)
 en_blogs <- gsub("\\s@[a-z_]{1,20}", "", en_blogs)
 en_blogs <- gsub("\\brt\\b", "", en_blogs)
+en_blogs <- gsub("#[a-z0-9_]+", "", en_blogs)
 
 #Get a 'bad words' list to remove from the corpus
 badwords_url <- "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
@@ -103,7 +104,7 @@ en_blogs <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "
 #gsub(sprintf("(*UCP)\\b(%s)\\b", paste(stopwords("en"), collapse = "|")), "", en_blogs, perl = TRUE)
 ```
 
-So what all happened there? We converted all of the text to normal ASCII characters (not applicable for languages with accented characters), then to lower case, then took out URLs and bad words. We removed some Twitter noise (usernames 'via @usernames', and 'rt' (but not 'rt' from words like 'art')). We'll do the same to the other text inputs in the background.
+So what all happened there? We converted all of the text to normal ASCII characters (not applicable for languages with accented characters), then to lower case, then took out URLs and bad words. We removed some Twitter noise (usernames, 'via @usernames', hashtags, and 'rt' (but not 'rt' from words like 'art')). We'll do the same to the other text inputs in the background.
 
 ```{r silent_process, include=FALSE}
 en_news <- stri_trans_general(en_news,"Latin-ASCII")
@@ -113,6 +114,7 @@ en_news <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", en_news)
 en_news <- gsub("via\\s*@[a-z_]{1,20}","", en_news)
 en_news <- gsub("\\s@[a-z_]{1,20}", "", en_news)
 en_news <- gsub("\\brt\\b", "", en_news)
+en_news <- gsub("#[a-z0-9_]+", "", en_news)
 en_news <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_news, perl = TRUE)
 en_twitter <- stri_trans_general(en_twitter,"Latin-ASCII")
 en_twitter <- gsub("[µºˆ_]+", '', en_twitter)
@@ -121,6 +123,7 @@ en_twitter <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", en_twitter)
 en_twitter <- gsub("via\\s*@[a-z_]{1,20}","", en_twitter)
 en_twitter <- gsub("\\s@[a-z_]{1,20}", "", en_twitter)
 en_twitter <- gsub("\\brt\\b", "", en_twitter)
+en_twitter <- gsub("#[a-z0-9_]+", "", en_twitter)
 en_twitter <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", en_twitter, perl = TRUE)
 ```
 
@@ -256,8 +259,22 @@ list(gt1=object_size(gt1), gt2=object_size(gt2), gt3=object_size(gt3), gt4=objec
 ```
 
 However, they can be quickly cut down in size:
+
 ```{r}
 list(gt2.small=object_size(gt2[gt2$count > 1, ]), gt3.small=object_size(gt3[gt3$count > 1, ]), gt4.small=object_size(gt4[gt4$count > 1, ]))
+```
+
+Or, removing only prgrams with only one postgram:
+
+```{r}
+g2unique<-data.frame(table(gt2$pregram))
+g2unique<-g2unique[g2unique$Freq > 1,]
+g3unique<-data.frame(table(gt3$pregram))
+g3unique<-g2unique[g3unique$Freq > 1,]
+g4unique<-data.frame(table(gt4$pregram))
+g4unique<-g2unique[g4unique$Freq > 1,]
+
+list(gt2.unique_pregram=object_size(gt2[gt2$pregram %in% g2unique$Var1,]), gt3.unique_pregram=object_size(gt3[gt3$pregram %in% g3unique$Var1,]), gt4.unique_pregram=object_size(gt4[gt4$pregram %in% g4unique$Var1,]))
 ```
 
 It may be worth struggling through analysis of larger fractions of the text (25+%) and keeping only count > 1, then building a 'parts of speech' model (eg suggest noun after an adjective, based on noun popularity). Backoff models will help with size reduction as well. Furthermore this would leave room for introduction of Proper Nouns (capitals) as well.
