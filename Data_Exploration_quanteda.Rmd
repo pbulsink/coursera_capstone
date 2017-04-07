@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(R.utils)
+library(readr)
 library(syuzhet)
 library(ggplot2)
 library(quanteda)
@@ -39,24 +39,15 @@ Our text files are quite big:
 file.size(c("./data/en_US/en_US.blogs.txt", "./data/en_US/en_US.news.txt", "./data/en_US/en_US.twitter.txt"))/1000000
 ```
 
-So with three files near 200 MB each, we should perform some sub-setting for our exploratory work. We'll open a pointer to each file, then see how many lines they have. The [R.utils](https://cran.r-project.org/package=R.utils) package makes this easier.
+So with three files near 200 MB each, we should perform some sub-setting for our exploratory work. We'll open a pointer to each file, then see how many lines they have. The [readr](https://cran.r-project.org/package=readr) package makes this easier.
 ```{r file_explore}
-library(R.utils)
-c_blogs<-file("./data/en_US/en_US.blogs.txt")
-c_news<-file("./data/en_US/en_US.news.txt")
-c_twitter<-file("./data/en_US/en_US.twitter.txt")
-en_blogs<-readLines(c_blogs, skipNul = TRUE)
-en_news<-readLines(c_news, skipNul = TRUE)
-en_twitter<-readLines(c_twitter, skipNul = TRUE)
+library(readr)
+en_blogs<-read_lines("./data/en_US/en_US.blogs.txt", progress=FALSE)
+en_news<-read_lines("./data/en_US/en_US.news.txt", progress=FALSE)
+en_twitter<-read_lines("./data/en_US/en_US.twitter.txt", progress=FALSE)
 blogs_lines<-length(en_blogs)
 news_lines<-length(en_news)
 twitter_lines<-length(en_twitter)
-```
-With the data loaded, we can close our file connections:
-```{r close_con}
-close(c_blogs)
-close(c_news)
-close(c_twitter)
 ```
 
 So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 5% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
@@ -75,6 +66,8 @@ One of the things we will be doing is building 'n-gram' models. However, they sh
 ```{r cleanup_example}
 library(quanteda)
 library(stringi)
+
+stokens<-tokens(c_blogs, what='sentence', removeNumbers=TRUE, removePunc=TRUE, removeSymbols=TRUE, removeSeparators=TRUE, removeTwitter=TRUE, removeHyphens=TRUE, removeURL=TRUE)
 
 #Prepare the text data
 #Fix accented characters (Not applicable for other languages) & some symbols associated
@@ -270,11 +263,14 @@ Or, removing only prgrams with only one postgram:
 g2unique<-data.frame(table(gt2$pregram))
 g2unique<-g2unique[g2unique$Freq > 1,]
 g3unique<-data.frame(table(gt3$pregram))
-g3unique<-g2unique[g3unique$Freq > 1,]
+g3unique<-g3unique[g3unique$Freq > 1,]
 g4unique<-data.frame(table(gt4$pregram))
-g4unique<-g2unique[g4unique$Freq > 1,]
+g4unique<-g4unique[g4unique$Freq > 1,]
 
 list(gt2.unique_pregram=object_size(gt2[gt2$pregram %in% g2unique$Var1,]), gt3.unique_pregram=object_size(gt3[gt3$pregram %in% g3unique$Var1,]), gt4.unique_pregram=object_size(gt4[gt4$pregram %in% g4unique$Var1,]))
 ```
 
 It may be worth struggling through analysis of larger fractions of the text (25+%) and keeping only count > 1, then building a 'parts of speech' model (eg suggest noun after an adjective, based on noun popularity). Backoff models will help with size reduction as well. Furthermore this would leave room for introduction of Proper Nouns (capitals) as well.
+
+
+
