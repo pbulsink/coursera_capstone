@@ -1,7 +1,7 @@
 ---
-title: "Data Exploration - Coursera Data Science Capstone"
+title: "Data Exploration and Milestone Report - Coursera Data Science Capstone"
 author: "Phil Bulsink"
-date: "April 30, 2017"
+date: "May 15, 2017"
 output: html_document
 ---
 
@@ -13,6 +13,8 @@ library(ggplot2)
 library(quanteda)
 library(stringi)
 library(stringr)
+library(ggplot2)
+library(knitr)
 ```
 
 The Coursera Data Science program has a final major capstone project, where we use provided data to produce predictions akin to those found on cell phone keyboards. This predicts the next word based on the previous word(s) typed by the user. 
@@ -36,10 +38,11 @@ With the file downloaded and extracted, we can see that it has three large Engli
 Our text files are quite big:
 ```{r filesize}
 #file.size/1000000 to get MB
-file.size(c("./data/en_US/en_US.blogs.txt", "./data/en_US/en_US.news.txt", "./data/en_US/en_US.twitter.txt"))/1000000
+fs<-file.size(c("./data/en_US/en_US.blogs.txt", "./data/en_US/en_US.news.txt", "./data/en_US/en_US.twitter.txt"))/1000000
+fs
 ```
 
-So with three files near 200 MB each, we should perform some sub-setting for our exploratory work. We'll open a pointer to each file, then see how many lines they have. The [readr](https://cran.r-project.org/package=readr) package makes this easier.
+So with three files near 200 MB each, we should perform some sub-setting for our exploratory work. We'll read each file, then see how many lines they have. The [readr](https://cran.r-project.org/package=readr) package makes this easier.
 ```{r file_explore}
 library(readr)
 en_blogs<-read_lines("./data/en_US/en_US.blogs.txt", progress=FALSE)
@@ -50,7 +53,56 @@ news_lines<-length(en_news)
 twitter_lines<-length(en_twitter)
 ```
 
-So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. We'll use only 5% of each file, randomly selected, for exploration. We'll look at each file separately as well, to see if there's any differences.
+So, our blog file has `r blogs_lines` lines, the news file has `r news_lines` lines, and the twitter file has `r twitter_lines` lines. There's likely a difference in the number of words in each of the lines of the files, a quick example could be twitter (where no line should be above 140 characters) and news or blogs. We'll investigate these distributions. 
+
+```{r words}
+en_blogs_word<-strsplit(gsub("[[:punct:]]","",en_blogs), " ")
+en_news_word<-strsplit(gsub("[[:punct:]]","",en_news), " ")
+en_twitter_word<-strsplit(gsub("[[:punct:]]","",en_twitter), " ")
+blogs_wordcount<-length(unlist(en_blogs_word))
+blogs_un_wordcount<-length(unique(unlist(en_blogs_word)))
+news_wordcount<-length(unlist(en_news_word))
+news_un_wordcount<-length(unique(unlist(en_news_word)))
+twitter_wordcount<-length(unlist(en_twitter_word))
+twitter_un_wordcount<-length(unique(unlist(en_twitter_word)))
+```
+
+A histogram of each file's word per line count:
+```{r hist_prep, include=FALSE}
+gc(verbose = FALSE)
+bl_wd<-data.frame("File"="blog", "words"=sapply(en_blogs_word, length))
+rm(en_blogs_word)
+nw_wd<-data.frame("File"="news", "words"=sapply(en_news_word, length))
+rm(en_news_word)
+tw_wd<-data.frame("File"="twitter","words"=sapply(en_twitter_word, length))
+rm(en_twitter_word)
+words<-rbind(bl_wd, nw_wd, tw_wd)
+rm(bl_wd, nw_wd, tw_wd)
+gc(verbose = FALSE)
+words$File<-as.factor(words$File)
+g<-ggplot(words, aes(words, color = File, fill = File)) + geom_density(alpha = 0.1) + xlim(c(0,150))
+rm(words)
+```
+
+```{r hist}
+g
+```
+
+A summary of all of the discovoered data is below:
+```{r table_prep, include=FALSE}
+sumdata<-data.frame("File" = c("Blogs", "News", "Twitter"), "File.Size"=c(fs[1], fs[2], fs[3]), 
+                    "Lines"=c(blogs_lines, news_lines, twitter_lines),
+                    "Words" = c(blogs_wordcount, news_wordcount,twitter_wordcount), 
+                    "Unique.Words" = c(blogs_un_wordcount, news_un_wordcount, twitter_un_wordcount))
+sumdata$Prop.Unique<-sumdata$Unique.Words/sumdata$Words
+#kable(sumdata, caption = "Summary of File Info")
+```
+
+```{r table, echo=FALSE}
+kable(sumdata, caption = "Summary of file information")
+```
+
+For the rest of our exploration we'll use only 5% of each file, randomly selected, to keep computation cost down. We'll look at each file separately as well, to see if there's any differences.
 
 ```{r subset}
 set.seed(1)
@@ -61,13 +113,13 @@ en_twitter<-en_twitter[sample(c(1:twitter_lines), twitter_lines*fraction)]
 ```
 
 #Data Exploration
-One of the things we will be doing is building 'n-gram' models. However, they should be built once the data is cleaned. To clean the data effectively, we'll use the [`tm`](https://cran.r-project.org/package=tm) package in R. We'll clean, then discuss the cleaning and compare to other language processing that may be utilized in other situations.
+One of the things we will be doing is building 'n-gram' models. However, they should be built once the data is cleaned. To clean the data effectively, we'll use the [`quanteda`](https://cran.r-project.org/package=quanteda) package in R. We'll also use [`stringi`](https://cran.r-project.org/package=stringi) to clear any string formatting issues. We'll clean, then discuss the cleaning and compare to other language processing that may be utilized in other situations.
 
 ```{r cleanup_example}
 library(quanteda)
 library(stringi)
 
-stokens<-tokens(c_blogs, what='sentence', removeNumbers=TRUE, removePunc=TRUE, removeSymbols=TRUE, removeSeparators=TRUE, removeTwitter=TRUE, removeHyphens=TRUE, removeURL=TRUE)
+#stokens<-tokens(c_blogs, what='sentence', removeNumbers=TRUE, removePunc=TRUE, removeSymbols=TRUE, removeSeparators=TRUE, removeTwitter=TRUE, removeHyphens=TRUE, removeURL=TRUE)
 
 #Prepare the text data
 #Fix accented characters (Not applicable for other languages) & some symbols associated
@@ -140,7 +192,7 @@ dfm3 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols 
 dfm4 <- dfm(corpus_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeURL = TRUE, removeTwitter = TRUE, removeHyphens=TRUE, ngrams=4)
 ```
 
-We then turned the blog, news and twitter data into corpi, and assigned document names corresponding to each, then combined them to one corpus. We then produced document feature matrices, or term document matrices, and in doing so breaking each document up into 1-, 2-, 3- and 4-gram chunks (e.g. for the string: "I want to go.", the 3-grams are "I want to" and "want to go."). While doing so, we cleaned out any numbers, punctuation, symbols, separators, and missed URLs or twitter crud.  With this, we can see which n-grams are the most popular! 
+We then turned the blog, news and twitter data into 'corpi', and assigned document names corresponding to each, then combined them to one 'corpus'. We then produced document feature matrices, or term document matrices, and in doing so breaking each document up into 1-, 2-, 3- and 4-gram chunks (e.g. for the string: "I want to go.", the 3-grams are "I want to" and "want to go."). While doing so, we cleaned out any numbers, punctuation, symbols, separators, and missed URLs or twitter crud.  With this, we can see which n-grams are the most popular! 
 
 ```{r clean0, include=FALSE}
 rm(en_twitter, en_news, c_blogs, c_news, c_twitter, corpus_blog, corpus_news, corpus_twitter, badwords, badwords_url, blogs_lines, news_lines, twitter_lines, fraction)
@@ -150,7 +202,7 @@ gc()
 topfeatures(dfm3)
 ```
 
-Similarly, the single most common 4-gram from the blogs set is "`r names(topfeatures(dfm4)[1])`". Seems a bit... pessimistic.
+Similarly, the single most common 4-gram from the set is "`r names(topfeatures(dfm4)[1])`". Seems a bit... pessimistic.
 
 #Data Processing Options
 Typical text processing begins to diverge from this point. Sometimes, you may be interested in removing all of the common words such as 'a', 'an', 'the', 'not', 'is' ... etc. These are called 'stop words', and are easily removed in the dfm creating step with `dfm(remove = stopwords())`. This won't work for us, as we want to know when to predict a stop word. Another manipulation to the text is called 'stemming', where words are shortened to their prefix base. For example, 'analyse', 'analysis', 'analysing', and 'analysed' would all be turned into 'analys', allowing for analysis not dependent on plurality, temporal (past/future/present) or other effects. Again, this would have been easy as `dfm(stem = TRUE)` but we want to predict the full word in our tool. 
@@ -270,7 +322,7 @@ g4unique<-g4unique[g4unique$Freq > 1,]
 list(gt2.unique_pregram=object_size(gt2[gt2$pregram %in% g2unique$Var1,]), gt3.unique_pregram=object_size(gt3[gt3$pregram %in% g3unique$Var1,]), gt4.unique_pregram=object_size(gt4[gt4$pregram %in% g4unique$Var1,]))
 ```
 
-It may be worth struggling through analysis of larger fractions of the text (25+%) and keeping only count > 1, then building a 'parts of speech' model (eg suggest noun after an adjective, based on noun popularity). Backoff models will help with size reduction as well. Furthermore this would leave room for introduction of Proper Nouns (capitals) as well.
+It may be worth struggling through analysis of larger fractions of the text (25-100%) and keeping only count > 1, then building a 'parts of speech' model (eg suggest noun after an adjective, based on noun popularity). Backoff models will help with size reduction as well. Furthermore this would leave room for introduction of Proper Nouns (capitals) as well.
 
 
 
