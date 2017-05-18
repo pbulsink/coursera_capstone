@@ -50,7 +50,7 @@ news_dev<-as.character(tokens(news_dev, what='sentence', removeNumbers=TRUE, rem
 twitter_dev<-as.character(tokens(twitter_dev, what='sentence', removeNumbers=TRUE, removePunc=TRUE, removeSymbols=TRUE, removeSeparators=TRUE, removeTwitter=TRUE, removeHyphens=TRUE, removeURL=TRUE))
 
 dev_tot<-c(blog_dev, news_dev, twitter_dev)
-rm(blog_dev, news_dev, twitter_dev)
+#rm(blog_dev, news_dev, twitter_dev)
 
 dev_tot<-stri_trans_general(dev_tot,"Latin-ASCII")
 dev_tot <- gsub("[µºˆ_]+", '', dev_tot)
@@ -67,6 +67,9 @@ dev_tot <- gsub("\\s@[a-z_]{1,20}", "", dev_tot)
 dev_tot <- gsub("\\brt\\b", "", dev_tot)
 dev_tot <- gsub("#[a-z0-9_]+", "", dev_tot)
 
+#Cut punctuation/symbols/numbers
+dev_tot <- gsub("[^a-zA-Z\\ ]", "", dev_tot)
+
 #Get a 'bad words' list to remove from the corpus
 badwords_url <- "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
 badwords <- unlist(strsplit(RCurl::getURL(badwords_url), "\n"))
@@ -75,14 +78,17 @@ badwords <- badwords[1:length(badwords)-1]
 #replacement builder code from getAnywhere(tm::removeWords.character)
 dev_tot <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", dev_tot, perl = TRUE)
 
+#Remove multiple spaces from deleted words
+dev_tot <- gsub("\\s\\s+", " ", dev_tot)
+
 dfm1<-dfm(dev_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeTwitter = TRUE, removeHyphens = TRUE, removeURL = TRUE, ngrams = 1)
 
 #add start <S> and end <E> tags to the sentences.
-dev_tot<-paste("<S>",dev_tot,"<E>", sep=" ")
+dev_tot<-paste("^",dev_tot,"$", sep=" ")
 
-dfm2<-dfm(dev_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeTwitter = TRUE, removeHyphens = TRUE, removeURL = TRUE, ngrams = 2)
-dfm3<-dfm(dev_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeTwitter = TRUE, removeHyphens = TRUE, removeURL = TRUE, ngrams = 3)
-dfm4<-dfm(dev_tot, removeNumbers = TRUE, removePunct = TRUE, removeSymbols = TRUE, removeSeparators = TRUE, removeTwitter = TRUE, removeHyphens = TRUE, removeURL = TRUE, ngrams = 4)
+dfm2<-dfm(dev_tot, removeNumbers = FALSE, removePunct = FALSE, removeSymbols = FALSE, removeSeparators = TRUE, removeHyphens = FALSE, removeURL = FALSE, ngrams = 2)
+dfm3<-dfm(dev_tot, removeNumbers = FALSE, removePunct = FALSE, removeSymbols = FALSE, removeSeparators = TRUE, removeHyphens = FALSE, removeURL = FALSE, ngrams = 3)
+dfm4<-dfm(dev_tot, removeNumbers = FALSE, removePunct = FALSE, removeSymbols = FALSE, removeSeparators = TRUE, removeHyphens = FALSE, removeURL = FALSE, ngrams = 4)
 ```
 
 ```{r n_gram}
