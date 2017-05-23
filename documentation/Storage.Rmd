@@ -10,7 +10,6 @@ knitr::opts_chunk$set(echo = TRUE)
 library(pryr)
 ```
 
-## R Markdown
 
 R lookups of very large data.frames (> 100 million rows) can be slow. For data analysis used for scholarly work or commercial interest, this may be acceptable. However, for an interactive or near-real-time analysis, this is not acceptable. 
 
