@@ -33,24 +33,43 @@ proc_ngram_pt<-function(n=2, corp=NULL){
 
 combine_ng_pt<-function(n=2){
     message('Loading file 1.')
-    ngpt<-as.data.table(readRDS(paste0("./data/ng",n,"pt1.RDS")))
-    ngpt$prop<-NULL
+    ngpt<-setDT(readRDS(paste0("./data/ng",n,"pt1.RDS")))
+    ngpt[,prop:=NULL]
+    ngpt<-ngpt[!ngrams %like% '\\$ \\^']
+    ngpt[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:(n-1))), collapse=" ")]
+    ngpt[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(n)))]
+    ngpt[,ngrams:=NULL]
     for(i in 2:20){
         message(paste0('Loading file ', i, "."))
-        ng<-as.data.table(readRDS(paste0("./data/ng",n,"pt",i,".RDS")))
-        ng$prop<-NULL
+        ng<-setDT(readRDS(paste0("./data/ng",n,"pt",i,".RDS")))
+        ng[,prop:=NULL]
+        ng<-ngpt[!ngrams %like% '\\$ \\^']
+        ng[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:(n-1))), collapse=" ")]
+        ng[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(n)))]
+        ng[,ngrams:=NULL]
         message('Merging Files')
         ngpt<-rbindlist(list(ngpt, ng))
         rm(ng)
         message('Aggregating Files')
-        ngpt[, .(freq=sum(freq)), by=ngrams]
+        ngpt[, .(freq=sum(freq)), by=c('pregrams','postgrams')]
     }
     return(ngpt)
 }
 #aggregate using dplyr
 #
 #
-# ngpt3<-combine_ng_pt(3)
-# saveRDS(ngpt3, "./data/ngpt3.RDS")
-# rm(ngpt3)
+# ngpt5<-combine_ng_pt(5)
+# saveRDS(ngpt5, "./data/ngpt5.RDS")
+# rm(ngpt5)
 # gc()
+#
+#Drop grams with ending and starting of sentence (ngram package artifact)
+#ngpt5<-ngpt5[!ngrams %like% '\\$ \\^']
+#split to pregrams and postgrams
+#ngpt5[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:4)), collapse=" ")]
+#ngpt5[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(5)))]
+#ngpt5[,ngrams:=NULL]
+#group by pregram, then drop pregams with <2?
+#ngpt5[freq>1]
+
+
