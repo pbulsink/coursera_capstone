@@ -32,18 +32,20 @@ proc_ngram_pt<-function(n=2, corp=NULL){
 }
 
 combine_ng_pt<-function(n=2){
-    message('Loading file 1.')
-    ngpt<-setDT(readRDS(paste0("./data/ng",n,"pt1.RDS")))
+    f<-paste0("./data/ng",n,"pt1.RDS")
+    message(paste0('Loading file ',f,'.'))
+    ngpt<-setDT(readRDS(f))
     ngpt[,prop:=NULL]
     ngpt<-ngpt[!ngrams %like% '\\$ \\^']
     ngpt[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:(n-1))), collapse=" ")]
     ngpt[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(n)))]
     ngpt[,ngrams:=NULL]
     for(i in 2:20){
-        message(paste0('Loading file ', i, "."))
-        ng<-setDT(readRDS(paste0("./data/ng",n,"pt",i,".RDS")))
+        f<-paste0("./data/ng",n,"pt",i,".RDS")
+        message(paste0('Loading file ', f, "."))
+        ng<-setDT(readRDS(f))
         ng[,prop:=NULL]
-        ng<-ngpt[!ngrams %like% '\\$ \\^']
+        ng<-ng[!ngrams %like% '\\$ \\^']
         ng[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:(n-1))), collapse=" ")]
         ng[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(n)))]
         ng[,ngrams:=NULL]
@@ -52,6 +54,7 @@ combine_ng_pt<-function(n=2){
         rm(ng)
         message('Aggregating Files')
         ngpt[, .(freq=sum(freq)), by=c('pregrams','postgrams')]
+        ngpt[, .(pgfreq=sum(freq)), by=c('pregrams')]
     }
     return(ngpt)
 }
@@ -71,5 +74,12 @@ combine_ng_pt<-function(n=2){
 #ngpt5[,ngrams:=NULL]
 #group by pregram, then drop pregams with <2?
 #ngpt5[freq>1]
+
+# for(i in 2:5){
+#     ngpt<-combine_ng_pt(n=i)
+#     saveRDS(ngpt, paste0("./data/ngpt",i,".RDS"))
+#     rm(ngpt)
+#     gc()
+# }
 
 
