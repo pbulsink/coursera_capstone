@@ -10,20 +10,24 @@ library(data.table)
 proc_ngram_pt<-function(n=2, corp=NULL){
     #corp<-get_corpus(what='all')
     if(is.null(corp)){
-        corp<-readRDS("./data/cleaned_input_text.RDS")
+        corp<-readRDS("./data/corp.RDS")
     }
 
     cl<-makeCluster(2)
     registerDoParallel(cl)
     indices<-c(1:length(corp))
-    groups<-split(indices, ceiling(seq_along(indices)/(length(indices)/20)))
+    groups<-split(indices, ceiling(seq_along(indices)/(length(indices)/40)))
     rm(indices)
-    g<-foreach(i = 1:20, .combine = 'rbind', .packages = c('ngram')) %dopar% {
+    g<-foreach(i = 1:40, .combine = 'rbind', .packages = c('ngram')) %dopar% {
+        message("concatenate")
         corpus<-concatenate(corp[unname(unlist(groups[i]))])
-        ng<-ngram(corpus, n=n)
+        message("ngrams")
+        ng<-ngram::ngram(corpus, n=n)
         rm(corpus)
+        message("phrasetable")
         ngpt<-get.phrasetable(ng)
         rm(ng)
+        message("saving")
         saveRDS(ngpt, paste0("./data/ng",n,"pt",i,".RDS"))
         rm(ngpt)
         return(TRUE)
@@ -35,28 +39,60 @@ combine_ng_pt<-function(n=2){
     f<-paste0("./data/ng",n,"pt1.RDS")
     message(paste0('Loading file ',f,'.'))
     ngpt<-setDT(readRDS(f))
+    message(paste0('Cleaning file ',f,'.'))
     ngpt[,prop:=NULL]
+    if(n == 1){
+        for(i in 2:20){
+            f<-paste0("./data/ng",n,"pt",i,".RDS")
+            message(paste0('Loading file ', f, "."))
+            ng<-setDT(readRDS(f))
+            ng[,prop:=NULL]
+            ngpt<-rbindlist(list(ngpt, ng))
+            rm(ng)
+            ngpt[, .(freq=sum(freq)), by=c('ngrams')]
+        }
+        return(ngpt)
+    }
     ngpt<-ngpt[!ngrams %like% '\\$ \\^']
-    ngpt[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:(n-1))), collapse=" ")]
-    ngpt[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(n)))]
+    ngpt[,c(paste0('word',1:n)) := tstrsplit(ngrams, " ", fixed=TRUE)]
+    if(n==2){
+        setnames(ngpt, c("word1","word2"), c('pregrams', 'postgrams'))
+    } else {
+        ngpt[,pregrams := do.call(paste, .SD), .SDcols = c(paste0('word', 1:(n-1)))]
+        ngpt[,(paste0('word',1:(n-1))):=NULL]
+        setnames(ngpt, paste0('word',n), 'postgrams')
+    }
     ngpt[,ngrams:=NULL]
     for(i in 2:20){
         f<-paste0("./data/ng",n,"pt",i,".RDS")
         message(paste0('Loading file ', f, "."))
         ng<-setDT(readRDS(f))
+        message(paste0('Cleaning file ',f,'.'))
         ng[,prop:=NULL]
         ng<-ng[!ngrams %like% '\\$ \\^']
-        ng[,c('pregrams') := paste(tstrsplit(ngrams, " ", fixed=TRUE, keep=c(1:(n-1))), collapse=" ")]
-        ng[,c('postgrams') := (tstrsplit(ngrams, " ", fixed=TRUE, keep=c(n)))]
+        ng[,c(paste0('word',1:n)) := tstrsplit(ngrams, " ", fixed=TRUE)]
+        if(n==2){
+            setnames(ng, c("word1","word2"), c('pregrams', 'postgrams'))
+        } else {
+            ng[,pregrams := do.call(paste, .SD), .SDcols = c(paste0('word', 1:(n-1)))]
+            ng[,(paste0('word',1:(n-1))):=NULL]
+            setnames(ng, paste0('word',n), 'postgrams')
+        }
         ng[,ngrams:=NULL]
         message('Merging Files')
         ngpt<-rbindlist(list(ngpt, ng))
         rm(ng)
         message('Aggregating Files')
         ngpt[, .(freq=sum(freq)), by=c('pregrams','postgrams')]
-        ngpt[, .(pgfreq=sum(freq)), by=c('pregrams')]
     }
-    return(ngpt)
+
+    message("Done assembly.")
+    pgfreq<-ngpt[,.(pgfreq=sum(freq)), by = 'pregrams']
+    setkey(ngpt, pregrams)
+    setkey(pgfreq, pregrams)
+    ngpt2<-ngpt[pgfreq, nomatch=0]
+    rm(pgfreq, ngpt)
+    return(ngpt2)
 }
 #aggregate using dplyr
 #
@@ -76,10 +112,12 @@ combine_ng_pt<-function(n=2){
 #ngpt5[freq>1]
 
 # for(i in 2:5){
+#     message(paste0("Combining ", i))
 #     ngpt<-combine_ng_pt(n=i)
+#     message(paste0("Saving ", i))
 #     saveRDS(ngpt, paste0("./data/ngpt",i,".RDS"))
 #     rm(ngpt)
 #     gc()
 # }
-
+# Try writing as data.table::fwrite()
 
