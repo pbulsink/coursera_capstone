@@ -10,16 +10,14 @@ library(data.table)
 proc_ngram_pt<-function(n=2, corp=NULL){
     #corp<-get_corpus(what='all')
     if(is.null(corp)){
-        corp<-readRDS("./data/corp.RDS")
+        corp<-readRDS("./data/cleaned_input_text.RDS")
     }
 
-    cl<-makeCluster(2)
-    registerDoParallel(cl)
     indices<-c(1:length(corp))
-    groups<-split(indices, ceiling(seq_along(indices)/(length(indices)/40)))
+    groups<-split(indices, ceiling(seq_along(indices)/(length(indices)/20)))
     rm(indices)
-    g<-foreach(i = 1:40, .combine = 'rbind', .packages = c('ngram')) %dopar% {
-        message("concatenate")
+    g<-for(i in 1:20) {
+        message(paste0("concatenate part ", i))
         corpus<-concatenate(corp[unname(unlist(groups[i]))])
         message("ngrams")
         ng<-ngram::ngram(corpus, n=n)
@@ -27,12 +25,10 @@ proc_ngram_pt<-function(n=2, corp=NULL){
         message("phrasetable")
         ngpt<-get.phrasetable(ng)
         rm(ng)
-        message("saving")
+        message(paste0("saving part ", i))
         saveRDS(ngpt, paste0("./data/ng",n,"pt",i,".RDS"))
         rm(ngpt)
-        return(TRUE)
     }
-    stopCluster(cl)
 }
 
 combine_ng_pt<-function(n=2){
@@ -42,13 +38,15 @@ combine_ng_pt<-function(n=2){
     message(paste0('Cleaning file ',f,'.'))
     ngpt[,prop:=NULL]
     if(n == 1){
-        for(i in 2:20){
+        for(i in 2:15){
             f<-paste0("./data/ng",n,"pt",i,".RDS")
             message(paste0('Loading file ', f, "."))
             ng<-setDT(readRDS(f))
+            message(paste0("Cleaning file ",f,"."))
             ng[,prop:=NULL]
             ngpt<-rbindlist(list(ngpt, ng))
             rm(ng)
+            message("Aggregating files")
             ngpt[, .(freq=sum(freq)), by=c('ngrams')]
         }
         return(ngpt)
@@ -63,7 +61,7 @@ combine_ng_pt<-function(n=2){
         setnames(ngpt, paste0('word',n), 'postgrams')
     }
     ngpt[,ngrams:=NULL]
-    for(i in 2:20){
+    for(i in 2:15){
         f<-paste0("./data/ng",n,"pt",i,".RDS")
         message(paste0('Loading file ', f, "."))
         ng<-setDT(readRDS(f))
@@ -111,13 +109,18 @@ combine_ng_pt<-function(n=2){
 #group by pregram, then drop pregams with <2?
 #ngpt5[freq>1]
 
-# for(i in 2:5){
+# for(i in 3:5){
+#     message(paste0("Processing ", i,"."))
+#     proc_ngram_pt(i)
+#     gc()
+# }
+# for(i in 1:5){
 #     message(paste0("Combining ", i))
 #     ngpt<-combine_ng_pt(n=i)
 #     message(paste0("Saving ", i))
-#     saveRDS(ngpt, paste0("./data/ngpt",i,".RDS"))
+#     saveRDS(ngpt, paste0("./data/ng",i,"_train.RDS"))
 #     rm(ngpt)
 #     gc()
 # }
-# Try writing as data.table::fwrite()
+
 
