@@ -3,7 +3,7 @@ library(stringr)
 library(stringi)
 library(ngram)
 
-clean_stream<-function(text_stream, badwords=NULL){
+cleanStream<-function(text_stream, badwords=NULL){
     #get badwords if not supplied.
     if(is.null(badwords)){
         badwords<-unlist(read.table("./data/badwords.txt"))
@@ -45,11 +45,49 @@ clean_stream<-function(text_stream, badwords=NULL){
     return(text_stream)
 }
 
-cut_n_max<-function(text_stream, nmax=5){
+cutNMax<-function(text_stream, nmax=5){
     t<-unlit(strsplit(text_stream, " "))
     if(length(t)<nmax)
         nmax<-length(t)
     return(t[1:nmax])
 }
 
+loadAndPrepGramsFromFile<-function(n, train = TRUE){
+    f<-ifelse(train, paste0("./data/ng",n,"_train.RDS"), paste0("./data/ng",n,".RDS"))
+    ng<-readRDS(f)
+    setkey(ng, pregrams)
+    ng
+}
 
+
+#Prepare for predictoins
+# ng1<-loadAndPrepGramsFromFile(1)
+# ng2<-loadAndPrepGramsFromFile(2)
+# ng3<-loadAndPrepGramsFromFile(3)
+# ng4<-loadAndPrepGramsFromFile(4)
+# ng5<-loadAndPrepGramsFromFile(5)
+
+
+
+stupid_backoff<-function(text,ng1,ng2,ng3,ng4,ng5){
+    text_stream<-cleanStream(text)
+
+    is4gram<-is3gram<-is2gram<-is1gram<-FALSE
+    cand5<-cand4<-cand3<-cand2<-cand1<-NULL
+
+    text4<-cutNMax(text_stream, 4)
+    text3<-cutNMax(text4, 3)
+    text2<-cutNMax(text3, 2)
+    text1<-cutNMax(text2, 1)
+
+    if(length(text4) == 4)
+        cand5<-ng5[pregram == text4]
+        cand5<-cand5[,pregram, by=freq]
+        t5<-sum(cand5[,freq])
+    if(length(text3) == 3)
+        cand4<-ng4[pregram == text3]
+    if(length(text2) == 2)
+        cand3<-ng3[pregram == text2]
+    if(length(text1) == 1)
+        cand2<-ng2[pregram == text2]
+}

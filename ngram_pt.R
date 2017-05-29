@@ -78,19 +78,16 @@ combine_ng_pt<-function(n=2){
         }
         ng[,ngrams:=NULL]
         message('Merging Files')
-        ngpt<-rbindlist(list(ngpt, ng))
+        ngpt<-rbind(ngpt, ng)
+
         rm(ng)
         message('Aggregating Files')
-        ngpt[, .(freq=sum(freq)), by=c('pregrams','postgrams')]
+        ngpt<-ngpt[, .(freq=as.integer(sum(freq))), by=c('pregrams','postgrams')]
     }
 
     message("Done assembly.")
-    pgfreq<-ngpt[,.(pgfreq=sum(freq)), by = 'pregrams']
     setkey(ngpt, pregrams)
-    setkey(pgfreq, pregrams)
-    ngpt2<-ngpt[pgfreq, nomatch=0]
-    rm(pgfreq, ngpt)
-    return(ngpt2)
+    return(ngpt)
 }
 #aggregate using dplyr
 #
