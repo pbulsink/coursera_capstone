@@ -1,20 +1,14 @@
-library(readr)
-library(stringr)
 library(stringi)
-library(ngram)
 
 cleanStream<-function(text_stream, badwords=NULL){
     #get badwords if not supplied.
     if(is.null(badwords)){
-        badwords<-unlist(read.table("./data/badwords.txt"))
+        badwords<-unlist(read.csv("./data/badwords.txt", header = FALSE, as.is = TRUE)[,1])
     }
 
     #clean formatting
-    text_stream<-stri_trans_general(text_stream,"Latin-ASCII")
+    text_stream<-stri_trans_tolower(text_stream,"Latin-ASCII")
     text_stream <- gsub("[µºˆ_]+", '', text_stream, perl = TRUE)
-
-    #set to lowercase
-    text_stream <- char_tolower(text_stream)
 
     #Remove URLS
     text_stream <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", text_stream, perl = TRUE)
@@ -28,11 +22,6 @@ cleanStream<-function(text_stream, badwords=NULL){
     #Cut punctuation/symbols/numbers
     text_stream <- gsub("[^a-zA-Z\\ ]", "", text_stream, perl = TRUE)
 
-    #Load a 'bad words' list to remove from the corpus
-    badwords_url <- "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
-    badwords <- unlist(strsplit(RCurl::getURL(badwords_url), "\n"))
-    #last 'bad word' is an emoji, remove
-    badwords <- badwords[1:length(badwords)-1]
     #replacement builder code from getAnywhere(tm::removeWords.character)
     text_stream <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", text_stream, perl = TRUE)
 
@@ -46,17 +35,37 @@ cleanStream<-function(text_stream, badwords=NULL){
 }
 
 cutNMax<-function(text_stream, nmax=5){
-    t<-unlit(strsplit(text_stream, " "))
+    t<-unlist(strsplit(text_stream, " "))
     if(length(t)<nmax)
         nmax<-length(t)
-    return(t[1:nmax])
+    return(t[(length(t)-nmax+1):length(t)])
 }
 
-loadAndPrepGramsFromFile<-function(n, train = TRUE){
-    f<-ifelse(train, paste0("./data/ng",n,"_train.RDS"), paste0("./data/ng",n,".RDS"))
-    ng<-readRDS(f)
-    setkey(ng, pregrams)
-    ng
+loadAndPrepGramsFromFile<-function(train = TRUE){
+
+    if(train){
+        f<-paste0("./data/ng",1:5,"_train.RDS")
+    }else{
+        f<-paste0("./data/ng",1:5,".RDS")
+    }
+    message('reading 1')
+    ng1<-readRDS(f[1])
+    setkey(ng1, pregrams)
+    message('2')
+    ng2<-readRDS(f[2])
+    setkey(ng2, pregrams)
+    message('3')
+    ng3<-readRDS(f[3])
+    setkey(ng3, pregrams)
+    message(4)
+    ng4<-readRDS(f[4])
+    setkey(ng4, pregrams)
+    message(5)
+    ng5<-readRDS(f[5])
+    setkey(ng5, pregrams)
+
+    nglist<-list(ng1, ng2, ng3, ng4, ng5)
+    nglist
 }
 
 
@@ -67,27 +76,52 @@ loadAndPrepGramsFromFile<-function(n, train = TRUE){
 # ng4<-loadAndPrepGramsFromFile(4)
 # ng5<-loadAndPrepGramsFromFile(5)
 
+#allNGrams<-list()
 
 
-stupid_backoff<-function(text,ng1,ng2,ng3,ng4,ng5){
+stupid_backoff<-function(text, allNGrams){
     text_stream<-cleanStream(text)
 
     is4gram<-is3gram<-is2gram<-is1gram<-FALSE
-    cand5<-cand4<-cand3<-cand2<-cand1<-NULL
 
     text4<-cutNMax(text_stream, 4)
     text3<-cutNMax(text4, 3)
     text2<-cutNMax(text3, 2)
     text1<-cutNMax(text2, 1)
 
-    if(length(text4) == 4)
-        cand5<-ng5[pregram == text4]
-        cand5<-cand5[,pregram, by=freq]
-        t5<-sum(cand5[,freq])
-    if(length(text3) == 3)
-        cand4<-ng4[pregram == text3]
-    if(length(text2) == 2)
-        cand3<-ng3[pregram == text2]
-    if(length(text1) == 1)
-        cand2<-ng2[pregram == text2]
+    if(length(text4) == 4){
+        candidates<-pgProp(text4, 4, lambdas=0, allNGrams)
+    } else if(length(text3) == 3){
+        candidates<-pgProp(text3, 3, lambdas=0, allNGrams)
+    } else if(length(text2) == 2){
+        candidates<-pgProp(text2, 2, lambdas=0, allNGrams)
+    } else if(length(text1) == 1){
+        candidates<-pgProp(text1, 1, lambdas=0, allNGrams)
+    } else {
+        candidates<-c(pgprop(text1, 0, lambdas=0, allNGrams))
+    }
+    candidates
+}
+
+pgProp<-function(text, ng, lambdas, allNGrams, lambdaval=0.4){
+    message(paste("pg", ng))
+    if(ng > 1){
+        candidates<-allNGrams[[ng+1]]['pregrams' == paste(text, collapse = ' ')]
+        tf<-sum(candidates[,'freq'])
+        candidates[,prop:=(freq/tf)]
+        if(lambdas > 0)
+            candidates[,prop:=prop*lambdas*lambdaval]
+        cless<-pgProp(cutNMax(text, ng-1), ng-1, lambdas+1, allNGrams, lambdaval)
+        candidates<-rbind(candidates, cless)
+    } else {
+        candidates<-head(allNGrams[[1]], 5)
+        candidates[,postgrams:=pregrams]
+        candidates[,pregrams:=NULL]
+        tf<-sum(allNGrams[[1]]['freq'])
+        candidates[,prop:=freq/tf]
+        if(lambdas > 0)
+            candidates[,prop:=prop*lambdas*lambdaval]
+    }
+    return(candidates)
+
 }
