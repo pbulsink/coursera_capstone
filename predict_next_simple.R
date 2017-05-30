@@ -3,7 +3,7 @@ library(stringi)
 cleanStream<-function(text_stream, badwords=NULL){
     #get badwords if not supplied.
     if(is.null(badwords)){
-        badwords<-unlist(read.csv("./data/badwords.txt", header = FALSE, as.is = TRUE)[,1])
+        badwords<-unlist(read.csv("./badwords.txt", header = FALSE, as.is = TRUE)[,1])
     }
 
     #clean formatting
