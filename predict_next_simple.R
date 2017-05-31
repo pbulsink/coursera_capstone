@@ -1,4 +1,6 @@
 library(stringi)
+library(data.table)
+library(tictoc)
 
 cleanStream<-function(text_stream, badwords=NULL){
     #get badwords if not supplied.
@@ -41,11 +43,13 @@ cutNMax<-function(text_stream, nmax=5){
     return(t[(length(t)-nmax+1):length(t)])
 }
 
-loadAndPrepGramsFromFile<-function(train = TRUE){
+loadAndPrepGramsFromFile<-function(train = TRUE, small=FALSE){
 
     if(train){
         f<-paste0("./data/ng",1:5,"_train.RDS")
-    }else{
+    } else if(small){
+        f<-paste0("./data/ng",1:5,"_small.RDS")
+    } else {
         f<-paste0("./data/ng",1:5,".RDS")
     }
     message('reading 1')
@@ -69,7 +73,7 @@ loadAndPrepGramsFromFile<-function(train = TRUE){
 }
 
 
-#Prepare for predictoins
+#Prepare for predictions
 # ng1<-loadAndPrepGramsFromFile(1)
 # ng2<-loadAndPrepGramsFromFile(2)
 # ng3<-loadAndPrepGramsFromFile(3)
@@ -80,48 +84,62 @@ loadAndPrepGramsFromFile<-function(train = TRUE){
 
 
 stupid_backoff<-function(text, allNGrams){
+    tic()
     text_stream<-cleanStream(text)
 
-    is4gram<-is3gram<-is2gram<-is1gram<-FALSE
-
     text4<-cutNMax(text_stream, 4)
-    text3<-cutNMax(text4, 3)
-    text2<-cutNMax(text3, 2)
-    text1<-cutNMax(text2, 1)
+    text3<-cutNMax(text_stream, 3)
+    text2<-cutNMax(text_stream, 2)
+    text1<-cutNMax(text_stream, 1)
 
     if(length(text4) == 4){
+        message('starting with 5g')
         candidates<-pgProp(text4, 4, lambdas=0, allNGrams)
     } else if(length(text3) == 3){
+        message('starting with 4g')
         candidates<-pgProp(text3, 3, lambdas=0, allNGrams)
     } else if(length(text2) == 2){
+        message('starting with 3g')
         candidates<-pgProp(text2, 2, lambdas=0, allNGrams)
     } else if(length(text1) == 1){
+        message('starting with 2g')
         candidates<-pgProp(text1, 1, lambdas=0, allNGrams)
     } else {
+        message('starting with 1g')
         candidates<-c(pgprop(text1, 0, lambdas=0, allNGrams))
     }
-    candidates
+
+    candidates<-candidates[1:5, c('postgrams','prop')]
+    toc()
+    return(candidates)
 }
 
 pgProp<-function(text, ng, lambdas, allNGrams, lambdaval=0.4){
-    message(paste("pg", ng))
-    if(ng > 1){
-        candidates<-allNGrams[[ng+1]]['pregrams' == paste(text, collapse = ' ')]
-        tf<-sum(candidates[,'freq'])
-        candidates[,prop:=(freq/tf)]
-        if(lambdas > 0)
-            candidates[,prop:=prop*lambdas*lambdaval]
-        cless<-pgProp(cutNMax(text, ng-1), ng-1, lambdas+1, allNGrams, lambdaval)
-        candidates<-rbind(candidates, cless)
+    message(paste0('Searching ',ng+1,'grams'))
+    if(ng > 0){
+        candidates<-allNGrams[[ng+1]][pregrams == paste(text, collapse = ' ')]
+        if(nrow(candidates) > 0) {
+            message(paste0(nrow(candidates), " candidates ng",ng))
+            candidates[,pregrams:=NULL]
+            tf<-sum(candidates[,freq])
+            candidates[,prop:=(freq/tf)]
+            if(lambdas > 0)
+                candidates[,prop:=prop*lambdas*lambdaval]
+        } else {
+            message(paste0("no candidates ng",ng))
+            candidates<-data.table('freq'=integer(), 'postgrams'=character(), 'prop'=numeric())
+        }
+        cNGless<-pgProp(cutNMax(text, ng-1), ng-1, lambdas+1, allNGrams, lambdaval)
+        candidates<-rbind(candidates, cNGless)
     } else {
+        message("Searching Base language")
         candidates<-head(allNGrams[[1]], 5)
         candidates[,postgrams:=pregrams]
         candidates[,pregrams:=NULL]
-        tf<-sum(allNGrams[[1]]['freq'])
+        tf<-sum(allNGrams[[1]][,freq])
         candidates[,prop:=freq/tf]
         if(lambdas > 0)
             candidates[,prop:=prop*lambdas*lambdaval]
     }
     return(candidates)
-
 }

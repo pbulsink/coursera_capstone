@@ -49,6 +49,8 @@ combine_ng_pt<-function(n=2){
             message("Aggregating files")
             ngpt[, .(freq=sum(freq)), by=c('ngrams')]
         }
+        ngpt[,pregrams:=ngrams]
+        ngpt[,ngrams:=NULL]
         return(ngpt)
     }
     ngpt<-ngpt[!ngrams %like% '\\$ \\^']
