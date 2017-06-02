@@ -72,17 +72,6 @@ loadAndPrepGramsFromFile<-function(train = TRUE, small=FALSE){
     nglist
 }
 
-
-#Prepare for predictions
-# ng1<-loadAndPrepGramsFromFile(1)
-# ng2<-loadAndPrepGramsFromFile(2)
-# ng3<-loadAndPrepGramsFromFile(3)
-# ng4<-loadAndPrepGramsFromFile(4)
-# ng5<-loadAndPrepGramsFromFile(5)
-
-#allNGrams<-list()
-
-
 stupid_backoff<-function(text, allNGrams){
     tic()
     text_stream<-cleanStream(text)
@@ -94,6 +83,7 @@ stupid_backoff<-function(text, allNGrams){
 
     if(length(text4) == 4){
         message('starting with 5g')
+        message(paste(text4,collapse=" "))
         candidates<-pgProp(text4, 4, lambdas=0, allNGrams)
     } else if(length(text3) == 3){
         message('starting with 4g')
@@ -109,7 +99,7 @@ stupid_backoff<-function(text, allNGrams){
         candidates<-c(pgprop(text1, 0, lambdas=0, allNGrams))
     }
 
-    candidates<-candidates[1:5, c('postgrams','prop')]
+    #candidates<-candidates[1:20, c('postgrams','prop')]
     toc()
     return(candidates)
 }
@@ -142,4 +132,10 @@ pgProp<-function(text, ng, lambdas, allNGrams, lambdaval=0.4){
             candidates[,prop:=prop*lambdas*lambdaval]
     }
     return(candidates)
+}
+
+quiztests<-function(text, p1, p2, p3, p4, allNGrams){
+    cand<-stupid_backoff(text, allNGrams)
+    cand<-cand[postgrams %in% c(p1, p2, p3, p4)]
+    return(cand[freq == max(freq), postgrams])
 }

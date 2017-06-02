@@ -38,7 +38,7 @@ combine_ng_pt<-function(n=2){
     message(paste0('Cleaning file ',f,'.'))
     ngpt[,prop:=NULL]
     if(n == 1){
-        for(i in 2:15){
+        for(i in 2:20){
             f<-paste0("./data/ng",n,"pt",i,".RDS")
             message(paste0('Loading file ', f, "."))
             ng<-setDT(readRDS(f))
@@ -63,7 +63,7 @@ combine_ng_pt<-function(n=2){
         setnames(ngpt, paste0('word',n), 'postgrams')
     }
     ngpt[,ngrams:=NULL]
-    for(i in 2:15){
+    for(i in 2:20){
         f<-paste0("./data/ng",n,"pt",i,".RDS")
         message(paste0('Loading file ', f, "."))
         ng<-setDT(readRDS(f))
@@ -115,11 +115,11 @@ combine_ng_pt<-function(n=2){
 # }
 # for(i in 1:5){
 #     message(paste0("Combining ", i))
-#     ngpt<-combine_ng_pt(n=i)
-#     message(paste0("Saving ", i))
-#     saveRDS(ngpt, paste0("./data/ng",i,"_train.RDS"))
-#     rm(ngpt)
-#     gc()
+    # ngpt<-combine_ng_pt(n=i)
+    # message(paste0("Saving ", i))
+    # saveRDS(ngpt, paste0("./data/ng",i,".RDS"))
+    # rm(ngpt)
+    # gc()
 # }
 
 

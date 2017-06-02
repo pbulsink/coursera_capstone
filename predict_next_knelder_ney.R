@@ -40,7 +40,7 @@ cutNMax<-function(text_stream, nmax=5){
     t<-unlist(strsplit(text_stream, " "))
     if(length(t)<nmax)
         nmax<-length(t)
-    return(t[(length(t)-nmax+1):length(t)])
+    return(paste(t[(length(t)-nmax+1):length(t)], collapse=' '))
 }
 
 loadAndPrepGramsFromFile<-function(train = TRUE, small=FALSE){
@@ -72,8 +72,59 @@ loadAndPrepGramsFromFile<-function(train = TRUE, small=FALSE){
     nglist
 }
 
-complex_KN<-function(text, allNGrams){
-    tic('complex 1 backoff')
+knP<-function(text, candidate, ng, allNGrams){
+    # where ng = length(text) + 1
+    # text is the pregrams
+    # candidate is the candidate postgram
+    if (ng > 1) {
+        a<-allNGrams[[ng]][pregrams == text & postgrams == candidate, freq]
+        d<-knD(ng)
+        ct<-sum(allNGrams[[ng]][pregrams == text, freq])
+        y<-knY(text, ng, allNGrams)
+        plittle <- knPcont(cutNMax(text, ng-2), candidate, ng-1, allNGrams)
+        p<-max(c(a-d), 0)/ct + y * plittle
+    } else {
+        p<-nrow(allNGrams[[2]][postgrams == candidate])/nrow(allNGrams[[2]])
+    }
+
+    return(p)
+}
+
+knPcont<-function(text, candidate, ng, allNGrams){
+    if(ng > 1){
+        a<-knNpre(text, candidate, ng, allNGrams)
+        d<-knD(ng)
+        n<-knN(text, ng, allNGrams)
+        y<-knY(text, ng, allNGrams)
+        plittle<-knPcont(cutNMax(text, ng-2), candidate, ng-1, allNGrams)
+        p<-max(c((a-d), 0))/n + y*plittle
+    } else {
+        p<-nrow(allNGrams[[2]][postgrams == candidate])/nrow(allNGrams[[2]])
+    }
+
+    return(p)
+}
+
+knNpre<-function(text, candidate, ng, allNGrams){
+    ag<-allNGrams[[ng+1]][pregrams %like% text & postgrams == candidate]
+
+    return(nrow(ag))
+}
+
+knY<-function(text, ng, allNGrams){
+    #
+    n<-knN(text, ng, allNGrams)
+    ct<-sum(allNGrams[[ng]][pregrams == text, freq])
+    y <- knD(ng) / ct * n
+    return(y)
+}
+
+knN<-function(text, ng, allNGrams){
+    return(nrow(allNGrams[[ng]][pregrams == text]))
+}
+
+kn_predict<-function(text, allNGrams){
+    tic()
     text_stream<-cleanStream(text)
 
     text4<-cutNMax(text_stream, 4)
@@ -83,13 +134,13 @@ complex_KN<-function(text, allNGrams){
 
     if(length(text4) == 4){
         message('starting with 5g')
+        message(paste(text4,collapse=" "))
         candidates<-pgProp(text4, 4, lambdas=0, allNGrams)
     } else if(length(text3) == 3){
         message('starting with 4g')
-        candidates<-pgProp(text3, 3, lambdas=0, allNGrams)
+        candidates<-kn_cand(text3, 3, lambdas=0, allNGrams)
     } else if(length(text2) == 2){
         message('starting with 3g')
-        print(text2)
         candidates<-pgProp(text2, 2, lambdas=0, allNGrams)
     } else if(length(text1) == 1){
         message('starting with 2g')
@@ -99,62 +150,45 @@ complex_KN<-function(text, allNGrams){
         candidates<-c(pgprop(text1, 0, lambdas=0, allNGrams))
     }
 
-    candidates<-candidates[1:5, c('postgrams','prop')]
+    #candidates<-candidates[1:20, c('postgrams','prop')]
     toc()
     return(candidates)
 }
-pKNContinuation<-function(text, candidate, ng, allNGrams){
-    if(ng > 0){
-        plike<-allNGrams[[ng+1]][pregrams %like% paste0(tail(text, (ng-1)), collapse = ' ')]
-        p<-max(c((nrow(plike[postgrams == candidate]) - knD(ng+1)),0)) / nrow(plike) +
-            ((knD(ng+1)/nrow(plike)) * nrow(allNGrams[[ng]][pregrams == paste(cutNMax(text, ng-1))]) *
-                  pKNContinuation(cutNMax(text, ng-1, candidate, ng-1, allNGrams)))
 
-    }else{
-
-    }
-    return()
-}
-
-pKNProp<-function(text, ng, allNGrams, level=0){
-
-
-
-
-
-
+kn_cand<-function(text, ng, allNGrams){
     if (ng > 1){
-        candidates<-allNGrams[[ng+1]][pregrams == paste(text, collapse = ' ')]
-        if (nrow(candidates) > 0){ #May have to change for edge cases.
+        candidates<-allNGrams[[ng]][pregrams == text]
+        message(paste0("There are ", nrow(candidates), " candidates"))
+        if (nrow(candidates) > 0){
             candidates[,prop:=0]
             for(i in 1:nrow(candidates)){
-                candidate<-candidates[i,'postgram']
-                candidates[i,prop]<-max(c((candidates[i,freq]-knD(ng+1)),0))/sum(candidates[,freq]) +
-                    ((knD(ng+1)/sum(candidates[,freq]))*nrow(candidates))*complexKNProp(text, ng, allNGrams, level=level+1)
+                message(i)
+                candidate<-candidates[i,postgrams]
+                candidates[i,prop:=knP(text, candidate, ng, allNGrams)]
             }
-        } else if(ng == 1){
+            candidates[,pregrams:=NULL]
         } else {
             message(paste0("no candidates ng",ng))
             candidates<-data.table('freq'=integer(), 'postgrams'=character(), 'prop'=numeric())
         }
-        cNGless<-complexKNProp(cutNMax(text, ng-1), ng-1, allNGrams)
-        candidates<-rbind(candidates, cNGless)
+        #cNGless<-kn_cand(cutNMax(text, ng-1), ng-1, allNGrams)
+        #candidates<-rbind(candidates, cNGless)
     } else {
         message("Searching Base language")
-        candidates<-head(allNGrams[[1]], 5)
+        candidates<-head(allNGrams[[1]], 10)
         candidates[,postgrams:=pregrams]
         candidates[,pregrams:=NULL]
-        tf<-sum(allNGrams[[1]][,freq])
-        candidates[,prop:=freq/tf]
-        if(lambdas > 0)
-            candidates[,prop:=prop*lambdas*lambdaval]
+        for(i in 1:10){
+            candidate<-candidates[i, postgrams]
+            candidates[i,prop:=nrow(allNGrams[[2]][postgrams == candidate])/nrow(allNGrams[[2]])]
+        }
     }
     return(candidates)
 }
 
 knD<-function(ng){
     #Calculated as nrow(ng[freq==1])/(nrow(ng[freq==1])+2*nrow(ng[freq==2]))
-    knd<-c(0.6951672, 0.7748497, 8661139, 0.9337619, 0.9700328)
+    knd<-c(0.6951672, 0.7748497, 0.8661139, 0.9337619, 0.9700328)
     return(knd[ng])
 }
 
