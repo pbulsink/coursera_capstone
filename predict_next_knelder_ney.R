@@ -208,3 +208,29 @@ knD <- function(ng) {
   knd <- c(0.6951672, 0.7748497, 0.8661139, 0.9337619, 0.9700328)
   return(knd[ng])
 }
+
+test<-function(candidates){
+    if (ng > 1) {
+        countpre <- allNGrams[[ng]][pregrams == text]
+        ncand<-list()
+        npre<-list()
+        npost<-list()
+        pcont<-list()
+        t<-list()
+        for(i in (ng-1):2){
+            t[i]<-cutNMax(text, i)
+            npost[i]<-nrow(allNGrams[[i+1]][pregrams %like% paste0(text,'$')])
+            npre[i]<-nrow(allNGrams[[i]][pregrams == text])
+        }
+        t[1]<-cutNMax(text,1)
+        t[ng]<-text
+        npre[ng]<-sum(allNGrams[[ng]][pregrams == text, freq])
+        ncand[ng]<-NULL
+
+        y <- d/ct * n
+        plittle <- knPcont(cutNMax(text, ng - 2), candidate, ng - 1, allNGrams)
+        p <- max(c(a - d), 0)/ct + y * plittle
+    } else {
+        p <- nrow(allNGrams[[2]][postgrams == candidate])/nrow(allNGrams[[2]])
+    }
+}
