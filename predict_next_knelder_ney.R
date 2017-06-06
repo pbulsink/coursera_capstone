@@ -96,7 +96,7 @@ knP <- function(text, candidate, ng, allNGrams) {
 
 knPcont <- function(text, candidate, ng, allNGrams) {
   if (ng > 1) {
-    likegram <- allNGrams[[ng + 1]][pregrams %like% paste0(text, "$")]
+    likegram <- allNGrams[[ng + 1]][pregrams %like% paste0(' ', text, "$")]
     a <- nrow(likegram[postgrams == candidate])
     d <- knD(ng)
     n <- nrow(allNGrams[[ng]][pregrams == text])
@@ -112,7 +112,7 @@ knPcont <- function(text, candidate, ng, allNGrams) {
 }
 
 # knNpre <- function(text, candidate, ng, allNGrams) {
-#   ag <- allNGrams[[ng + 1]][pregrams %like% paste0(text, "$") & postgrams == candidate]
+#   ag <- allNGrams[[ng + 1]][pregrams %like% paste0(' ', text, "$") & postgrams == candidate]
 #   return(nrow(ag))
 # }
 #
@@ -127,7 +127,7 @@ knPcont <- function(text, candidate, ng, allNGrams) {
 # knYn <- function(text, ng, allNGrams) {
 #   #
 #   n <- knN(text, ng, allNGrams)
-#   ct <- nrow(allNGrams[[ng + 1]][pregrams %like% paste0(text, "$")])
+#   ct <- nrow(allNGrams[[ng + 1]][pregrams %like% paste0(' ', text, "$")])
 #   y <- knD(ng)/ct * n
 #   return(y)
 # }
@@ -173,15 +173,19 @@ kn_cand <- function(text, ng, allNGrams, cand=NULL) {
     candidates <- allNGrams[[ng]][pregrams == text]
     message(paste0("There are ", nrow(candidates), " candidates"))
     if (nrow(candidates) > 0) {
-        cand<-candidates[,postgrams]
+      cand<-candidates[,postgrams]
 
       candidates[, `:=`(prop, kn_vect(text = text, candidates = cand, ng = ng, allNGrams = allNGrams))]
 
       candidates[, `:=`(pregrams, NULL)]
-      candidates[, `:=`(freq, NULL)]
     } else {
       message(paste0("no candidates ng", ng))
-      candidates <- data.table(postgrams = character(), prop = numeric())
+      candidates <- data.table(postgrams = character(), prop = numeric(), freq=integer())
+    }
+
+    if(nrow(candidates) < 25){
+        cNGless <- kn_cand(cutNMax(text, ng - 2), ng - 1, allNGrams, candidates[,postgrams])
+        candidates <- rbind(candidates, cNGless)
     }
   } else {
     message("Searching Base language")
@@ -208,9 +212,9 @@ kn_vect<-function(text, candidates, ng, allNGrams){
         for(i in (ng-1):2){
             message(i)
             t[[i]]<-cutNMax(text, i-1)
-            npost[[i]]<-nrow(allNGrams[[i+1]][pregrams %like% paste0(t[[i]],'$')])
+            npost[[i]]<-nrow(allNGrams[[i+1]][pregrams %like% paste0(' ', t[[i]],'$')])
             npre[[i]]<-nrow(allNGrams[[i]][pregrams == t[[i]]])
-            ncand[[i]]<-unname(sapply(candidates, function(x) nrow(allNGrams[[i]][pregrams %like% paste0(t[[i]], '$') & postgrams == x])))
+            ncand[[i]]<-unname(sapply(candidates, function(x) nrow(allNGrams[[i]][postgrams == x & pregrams %like% paste0(' ', t[[i]], '$')])))
         }
         ncand[[1]]<-unname(sapply(candidates, function(x) nrow(allNGrams[[2]][postgrams == text])))
         npre[[1]]<-nrow(allNGrams[[2]])
