@@ -1,0 +1,42 @@
+Model Performance
+
+Dummy:
+Overall top-3 score:     6.64 %
+Overall top-1 precision: 5.42 %
+Overall top-3 precision: 8.11 %
+Average runtime:         0.06 msec
+Number of predictions:   28464
+
+Stupid Backoff:
+(all, smallNGrams)
+Overall top-3 score:     12.19 %
+Overall top-1 precision: 9.33 %
+Overall top-3 precision: 14.63 %
+Average runtime:         24.34 msec
+Number of predictions:   28464
+Total memory used:       1005.77 MB
+
+(t25, smallNGrams)
+Overall top-3 score:     13.04 %
+Overall top-1 precision: 9.58 %
+Overall top-3 precision: 16.07 %
+Average runtime:         22.81 msec
+Number of predictions:   28464
+Total memory used:       1005.78 MB
+
+(t25, trainNGrams)
+Overall top-3 score:     14.60 %
+Overall top-1 precision: 10.88 %
+Overall top-3 precision: 17.92 %
+Average runtime:         299.66 msec
+Number of predictions:   28464
+Total memory used:       10232.11 MB
+
+
+KN:
+Overall top-3 score:     14.71 %
+Overall top-1 precision: 10.46 %
+Overall top-3 precision: 18.51 %
+Average runtime:         2048.22 msec
+Number of predictions:   28464
+Total memory used:       1012.39 MB

@@ -12,11 +12,11 @@ require(data.table)
 # 01b. Get text from randomly selected tweets
 ################################################################################################
 
-tweets <- readLines('data/tweets.txt', encoding = 'UTF-8')
+tweets <- readLines('./dsci-benchmark-master/data/tweets.txt', encoding = 'UTF-8')
 
 # verify checksum of loaded lines
-digest(paste0(tweets, collapse = '||'), 
-       algo='sha256', 
+digest(paste0(tweets, collapse = '||'),
+       algo='sha256',
        serialize=F)==
     "7fa3bf921c393fe7009bc60971b2bb8396414e7602bb4f409bed78c7192c30f4"
 
@@ -25,11 +25,11 @@ digest(paste0(tweets, collapse = '||'),
 ################################################################################################
 
 # make sure we can read it back in
-blogs <- readLines('data/blogs.txt', encoding = 'UTF-8')
+blogs <- readLines('./dsci-benchmark-master/data/blogs.txt', encoding = 'UTF-8')
 
 # verify checksum of loaded lines
-digest(paste0(blogs, collapse = '||'), 
-       algo='sha256', 
+digest(paste0(blogs, collapse = '||'),
+       algo='sha256',
        serialize=F)==
     "14b3c593e543eb8b2932cf00b646ed653e336897a03c82098b725e6e1f9b7aa2"
 
@@ -45,22 +45,22 @@ digest(paste0(blogs, collapse = '||'),
 ################################################################################################
 
 # split.sentence
-#  Returns a matrix containing in column i the part of the line before the ith word (sentence) 
+#  Returns a matrix containing in column i the part of the line before the ith word (sentence)
 #  and the ith word (nextWord).
 #  The function is used in benchmark to generate and evaluate predictions for the partial lines.
 split.sentence <- compiler::cmpfun(function(line) {
     require(stringi)
-    # append a space to the sentence (to make sure we always create one result with only the 
+    # append a space to the sentence (to make sure we always create one result with only the
     # last word missing)
     sent <- paste0(line, ' ')
 
-    sep <- stri_locate_all_regex(line, 
-                                 pattern = '[^\\w\'@#\u2018\u2019\u201b]+', 
-                                 omit_empty=T, 
+    sep <- stri_locate_all_regex(line,
+                                 pattern = '[^\\w\'@#\u2018\u2019\u201b]+',
+                                 omit_empty=T,
                                  case_insensitive=T)[[1]]
-    sapply(seq_len(nrow(sep)), 
+    sapply(seq_len(nrow(sep)),
            function(i) {
-               c(sentence=ifelse(i>1, substr(line, 1, sep[i-1,2]), ''), 
+               c(sentence=ifelse(i>1, substr(line, 1, sep[i-1,2]), ''),
                     nextWord=tolower(substr(line, max(sep[i-1,2]+1, 1), min(nchar(line), sep[i,1]-1)))
                )
                })
@@ -75,22 +75,22 @@ split.sentence <- compiler::cmpfun(function(line) {
 #  set(s).
 #
 #  Parameters
-#   FUN         Function that produces the next word prediction. The function should take a single 
+#   FUN         Function that produces the next word prediction. The function should take a single
 #               character value as first input and return a vector of character values represen-
 #               ting the top-3 predictions (with the 1st value being the first prediction).
 #   ...         Additional parameters to pass to FUN.
 #   sent.list   Named list of character vectors containing the text lines used for the benchmark.
-#   ext.output  If TRUE, return additional details about the R environment and loaded packages 
+#   ext.output  If TRUE, return additional details about the R environment and loaded packages
 #               after completing the benchmark.
 benchmark <- compiler::cmpfun(function(FUN, ..., sent.list, ext.output=T) {
     require(stringi)
     require(digest)
     require(data.table)
-    
-    result <- rbindlist(lapply(names(sent.list), 
-           function(list.name) {  
+
+    result <- rbindlist(lapply(names(sent.list),
+           function(list.name) {
                sentences <- sent.list[[list.name]]
-               
+
                score <- 0
                max.score <-0
                hit.count.top3 <- 0
@@ -110,7 +110,7 @@ benchmark <- compiler::cmpfun(function(FUN, ..., sent.list, ext.output=T) {
                        hit.count.top1 <- hit.count.top1 + sum(rank==1)
                    }
                })
-               
+
                list('list.name' = list.name,
                     'line.count' = length(sentences),
                     'word.count' = sum(stri_count_words(sentences)),
@@ -121,12 +121,12 @@ benchmark <- compiler::cmpfun(function(FUN, ..., sent.list, ext.output=T) {
                     'hit.count.top1' = hit.count.top1,
                     'total.count' = total.count,
                     'total.runtime' = time[3]
-               )               
+               )
            }), use.names=T)
-    
+
     setkey(result, list.name)
-    
-    # The overall scores are calculated weighting each data set equally (independent of the 
+
+    # The overall scores are calculated weighting each data set equally (independent of the
     # number of lines in each dataset).
     overall.score.percent = 100 * result[,sum(score/max.score)/.N]
     overall.precision.top3 = 100 * result[,sum(hit.count.top3/total.count)/.N]
@@ -152,7 +152,7 @@ benchmark <- compiler::cmpfun(function(FUN, ..., sent.list, ext.output=T) {
                 number.of.predictions,
                 total.mem.used
                 ))
-    
+
     cat('\nDataset details\n')
     for (p.list.name in result$list.name) {
         res <- result[list(p.list.name)]
@@ -168,27 +168,27 @@ benchmark <- compiler::cmpfun(function(FUN, ..., sent.list, ext.output=T) {
                     100 * res$hit.count.top3/res$total.count
         ))
     }
-    
+
     if (ext.output==T) {
-        packages <- sort(stri_replace_first_fixed(search()[stri_detect_regex(search(), 
-                                                                             '^package:')], 
+        packages <- sort(stri_replace_first_fixed(search()[stri_detect_regex(search(),
+                                                                             '^package:')],
                                                   'package:', ''))
-        
-        cat(sprintf(paste0('\n\n%s, platform %s\n', 
+
+        cat(sprintf(paste0('\n\n%s, platform %s\n',
                            'Attached non-base packages:   %s\n',
                            'Unattached non-base packages: %s'
                            ),
                    sessionInfo()$R.version$version.string,
                    sessionInfo()$platform,
-                   paste0(sapply(sessionInfo()$otherPkgs, 
+                   paste0(sapply(sessionInfo()$otherPkgs,
                                  function(pkg) {
                                      paste0(pkg$Package, ' (v', pkg$Version, ')')
-                                 }), 
+                                 }),
                           collapse = ', '),
-                   paste0(sapply(sessionInfo()$loadedOnly, 
-                                 function(pkg) { 
+                   paste0(sapply(sessionInfo()$loadedOnly,
+                                 function(pkg) {
                                      paste0(pkg$Package, ' (v', pkg$Version, ')')
-                                 }), 
+                                 }),
                           collapse = ', ')
                    ))
     }
@@ -214,8 +214,14 @@ predict.baseline <- function(x){c('the', 'on', 'a')}
 # 04. Perform the benchmark
 #
 ################################################################################################
-benchmark(predict.baseline, 
+benchmark(predict.baseline,
           # additional parameters to be passed to the prediction function can be inserted here
-          sent.list = list('tweets' = tweets, 
-                           'blogs' = blogs), 
+          sent.list = list('tweets' = tweets,
+                           'blogs' = blogs),
+          ext.output = T)
+
+benchmark(kn_predict,
+          allNGrams = allNGrams,
+          sent.list = list('tweets' = tweets,
+                           'blogs' = blogs),
           ext.output = T)

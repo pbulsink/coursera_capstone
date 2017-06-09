@@ -11,29 +11,33 @@ cleanStream <- function(text_stream, badwords = NULL) {
 
   # clean formatting
   text_stream <- stri_trans_tolower(text_stream, "Latin-ASCII")
-  text_stream <- gsub("[µºˆ_]+", "", text_stream, perl = TRUE)
+
+  patterns_to_remove<-c("[µºˆ_]+", "(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "via\\s*@[a-z_]{1,20}",
+                           "\\s@[a-z_]{1,20}", "\\brt\\b", "#[a-z0-9_]+", "[^a-zA-Z\\ ]")
+  patterns_to_remove<-paste(c(patterns_to_remove,badwords), collapse="|")
+
+  #text_stream <- gsub("[µºˆ_]+", "", text_stream, perl = TRUE)
 
   # Remove URLS
-  text_stream <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", text_stream,
-    perl = TRUE)
+  #text_stream <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "", text_stream,
+   # perl = TRUE)
 
   # Remove Twitter 'Via @username' and '@usernames' and 'rt' and hashtags
-  text_stream <- gsub("via\\s*@[a-z_]{1,20}", "", text_stream, perl = TRUE)
-  text_stream <- gsub("\\s@[a-z_]{1,20}", "", text_stream, perl = TRUE)
-  text_stream <- gsub("\\brt\\b", "", text_stream, perl = TRUE)
-  text_stream <- gsub("#[a-z0-9_]+", "", text_stream, perl = TRUE)
+  #text_stream <- gsub("via\\s*@[a-z_]{1,20}", "", text_stream, perl = TRUE)
+  #text_stream <- gsub("\\s@[a-z_]{1,20}", "", text_stream, perl = TRUE)
+  #text_stream <- gsub("\\brt\\b", "", text_stream, perl = TRUE)
+  #text_stream <- gsub("#[a-z0-9_]+", "", text_stream, perl = TRUE)
 
   # Cut punctuation/symbols/numbers
-  text_stream <- gsub("[^a-zA-Z\\ ]", "", text_stream, perl = TRUE)
+  #text_stream <- gsub("[^a-zA-Z\\ ]", "", text_stream, perl = TRUE)
 
-  # replacement builder code from getAnywhere(tm::removeWords.character)
-  text_stream <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")),
-    "", text_stream, perl = TRUE)
+
+  text_stream <- gsub(patterns_to_remove,"", text_stream, perl = TRUE)
 
   # Remove multiple spaces from deleted words
   text_stream <- gsub("\\s\\s+", " ", text_stream, perl = TRUE)
 
-  # add start ^ and end $ tags to the sentences.
+  # add start ^ tags to the sentences.
   text_stream <- paste("^", text_stream)
 
   return(text_stream)
@@ -137,67 +141,56 @@ knPcont <- function(text, candidate, ng, allNGrams) {
 # }
 
 kn_predict <- function(text, allNGrams) {
-  tic()
+  #tic()
   text_stream <- cleanStream(text)
 
-  text4 <- cutNMax(text_stream, 4)
-  text3 <- cutNMax(text_stream, 3)
-  text2 <- cutNMax(text_stream, 2)
-  text1 <- cutNMax(text_stream, 1)
+  text_stream <- cutNMax(text_stream, 4)
+  lngth<-length(unlist(strsplit(text_stream, " ")))
 
-  if (length(unlist(strsplit(text4, " "))) == 4) {
-    message("starting with 5g")
-    message(paste(text4, collapse = " "))
-    candidates <- kn_cand(text4, 5, allNGrams)
-  } else if (length(unlist(strsplit(text3, " "))) == 3) {
-    message("starting with 4g")
-    candidates <- kn_cand(text3, 4, allNGrams)
-  } else if (length(unlist(strsplit(text2, " "))) == 2) {
-    message("starting with 3g")
-    candidates <- kn_cand(text2, 3, allNGrams)
-  } else if (length(unlist(strsplit(text1, " "))) == 1) {
-    message("starting with 2g")
-    candidates <- kn_cand(text1, 2, allNGrams)
-  } else {
-    message("starting with 1g")
-    candidates <- kn_cand(text1, 1, allNGrams)
-  }
+  candidates <- kn_cand(text_stream, lngth+1, allNGrams)
+  candidates[postgrams == '$', postgrams:='.']
+  candidates<-candidates[order(-prop)][1:3, postgrams]
 
-  # candidates<-candidates[1:20, c('postgrams','prop')]
-  toc()
-  return(candidates[prop>1e-4])
+
+  #toc()
+  return(candidates)# [prop>1e-4])
 }
 
 kn_cand <- function(text, ng, allNGrams, cand=NULL) {
   if (ng > 1) {
-    candidates <- allNGrams[[ng]][pregrams == text]
-    message(paste0("There are ", nrow(candidates), " candidates"))
+    candidates <- allNGrams[[ng]][!(postgrams %in% cand) & pregrams == text]
+    #message(paste0("There are ", nrow(candidates), " more candidates."))
     if (nrow(candidates) > 0) {
+        if(nrow(candidates) > 100){
+            #message('checking top 250 of them')
+            candidates <- candidates[order(-freq)][1:100]
+        }
       cand<-candidates[,postgrams]
-
       candidates[, `:=`(prop, kn_vect(text = text, candidates = cand, ng = ng, allNGrams = allNGrams))]
-
       candidates[, `:=`(pregrams, NULL)]
     } else {
-      message(paste0("no candidates ng", ng))
+      #message(paste0("no candidates ng", ng))
       candidates <- data.table(postgrams = character(), prop = numeric(), freq=integer())
     }
 
-    if(nrow(candidates) < 25){
+    i<-ng
+    while((nrow(candidates) < 10) & (i>0)){
         cNGless <- kn_cand(cutNMax(text, ng - 2), ng - 1, allNGrams, candidates[,postgrams])
         candidates <- rbind(candidates, cNGless)
+        i<-i-1
     }
+
   } else {
-    message("Searching Base language")
-    candidates <- head(allNGrams[[1]], 10)
+    #message("Searching Base language")
+    candidates <- head(allNGrams[[1]][order(-freq) & !(pregrams %in% c(cand, '$', '^'))], 3)
     candidates[, `:=`(postgrams, pregrams)]
     candidates[, `:=`(pregrams, NULL)]
-    for (i in 1:10) {
+    for (i in 1:3) {
       candidate <- candidates[i, postgrams]
       candidates[i, `:=`(prop, nrow(allNGrams[[2]][postgrams == candidate])/nrow(allNGrams[[2]]))]
     }
   }
-  return(candidates)
+  return(candidates[order(-prop)])
 }
 
 knD <- function(ng) {
@@ -208,19 +201,23 @@ knD <- function(ng) {
 
 kn_vect<-function(text, candidates, ng, allNGrams){
     if (ng > 1) {
-        ncand<-npre<-npost<-pcont<-t<-p<-list()
-        for(i in (ng-1):2){
-            message(i)
-            t[[i]]<-cutNMax(text, i-1)
-            npost[[i]]<-nrow(allNGrams[[i+1]][pregrams %like% paste0(' ', t[[i]],'$')])
-            npre[[i]]<-nrow(allNGrams[[i]][pregrams == t[[i]]])
-            ncand[[i]]<-unname(sapply(candidates, function(x) nrow(allNGrams[[i]][postgrams == x & pregrams %like% paste0(' ', t[[i]], '$')])))
+        ncand<-npre<-npost<-t<-p<-list()
+        i <- ng
+        if(ng > 2){
+            for(i in (ng-1):2){
+                #message(i)
+                t[[i]]<-cutNMax(text, i-1)
+                likegrams<-allNGrams[[i+1]][pregrams %like% paste0(' ', t[[i]],'$')]
+                npost[[i]]<-nrow(likegrams)
+                npre[[i]]<-nrow(allNGrams[[i]][pregrams == t[[i]]])
+                ncand[[i]]<-unname(sapply(candidates, function(x) nrow(likegrams[postgrams == x])))
+            }
         }
-        ncand[[1]]<-unname(sapply(candidates, function(x) nrow(allNGrams[[2]][postgrams == text])))
+        ncand[[1]]<-unname(sapply(candidates, function(x) nrow(allNGrams[[2]][postgrams == x])))
         npre[[1]]<-nrow(allNGrams[[2]])
         t[[ng]]<-text
         npre[[ng]]<-sum(allNGrams[[ng]][pregrams == t[[ng]], freq])
-        ncand[[ng]]<-allNGrams[[ng]][pregrams == t[[ng]] & postgrams %in% candidates, freq]
+        ncand[[ng]]<-allNGrams[[ng]][pregrams == t[[ng]]][postgrams %in% candidates, freq]
         npost[[ng]]<-sum(allNGrams[[ng]][pregrams == t[ng], freq])
 
         p[[1]]<-ncand[[1]]/npre[[1]]
