@@ -53,11 +53,11 @@ cutNMax <- function(text_stream, nmax = 5) {
 loadAndPrepGramsFromFile <- function(train = TRUE, small = FALSE) {
 
   if (train) {
-    f <- paste0("./data/ng", 1:5, "_train.RDS")
+    f <- paste0("./data/ng", 1:4, "_train.RDS")
   } else if (small) {
-    f <- paste0("./data/ng", 1:5, "_small.RDS")
+    f <- paste0("./data/ng", 1:4, "_small.RDS")
   } else {
-    f <- paste0("./data/ng", 1:5, ".RDS")
+    f <- paste0("./data/ng", 1:4, ".RDS")
   }
   message("reading 1")
   ng1 <- readRDS(f[1])
@@ -71,11 +71,8 @@ loadAndPrepGramsFromFile <- function(train = TRUE, small = FALSE) {
   message(4)
   ng4 <- readRDS(f[4])
   setkey(ng4, pregrams)
-  message(5)
-  ng5 <- readRDS(f[5])
-  setkey(ng5, pregrams)
 
-  nglist <- list(ng1, ng2, ng3, ng4, ng5)
+  nglist <- list(ng1, ng2, ng3, ng4)
   nglist
 }
 
@@ -149,7 +146,7 @@ kn_predict <- function(text, allNGrams) {
 
   candidates <- kn_cand(text_stream, lngth+1, allNGrams)
   candidates[postgrams == '$', postgrams:='.']
-  candidates<-candidates[order(-prop)][1:3, postgrams]
+  #candidates<-candidates[order(-prop)][1:3, postgrams]
 
 
   #toc()
