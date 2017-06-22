@@ -2,6 +2,96 @@
 
 library(tensorflow)
 library(tictoc)
+library(readr)
+library(stringi)
+library(dplyr)
+library(quanteda)
+
+prep_text<-function(){
+
+    pb<-progress_estimated(13)
+    pb$print()
+    blog<-read_lines("./data/en_US/en_US.blogs.txt", progress=FALSE)
+    news<-read_lines("./data/en_US/en_US.news.txt", progress=FALSE)
+    twitter<-read_lines("./data/en_US/en_US.twitter.txt", progress=FALSE)
+    pb$tick()$print()
+
+    blog<-as.character(tokens(blog, what='sentence'))
+    news<-as.character(tokens(news, what='sentence'))
+    twitter<-as.character(tokens(twitter, what='sentence'))
+
+    pb$tick()$print()
+
+    corp_tot<-c(blog, news, twitter)
+    rm(blog, news, twitter)
+
+    #corp_tot<-stri_trans_general(corp_tot,"Latin-ASCII")
+    #pb$tick()$print()
+    corp_tot <- gsub("[µºˆ_ðŸ˜Š]+", '', corp_tot, perl = TRUE)
+
+    pb$tick()$print()
+    #set to lowercase
+    corp_tot <- tolower(corp_tot)
+    pb$tick()$print()
+
+    #Remove URLS
+    corp_tot <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "<URL>", corp_tot, perl = TRUE)
+    pb$tick()$print()
+
+    #Remove Twitter @usernames and hashtags
+    corp_tot <- gsub("\\s@[a-z_]{1,20}", "<TWITTERUSER>", corp_tot, perl = TRUE)
+    pb$tick()$print()
+    corp_tot <- gsub("#[a-z0-9_]+", "<HASHTAG>", corp_tot, perl = TRUE)
+    pb$tick()$print()
+
+    badwords <- unlist(read.csv("./badwords.txt", header = FALSE, as.is = TRUE)[,1])
+    corp_tot <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", corp_tot, perl = TRUE)
+    pb$tick()$print()
+    corp_tot <- gsub("_|\\+|-|@|#|\\$|%|\\^|\\&|\\*|\\(|\\)|;|\\\\|\\/|<|>|\"|'|`|~|…|\\|", "", corp_tot, perl = TRUE)
+    pb$tick()$print()
+    corp_tot <- gsub("\\s\\s+", " ", corp_tot, perl = TRUE)
+
+    corp_tot <- gsub("([a-z])\\.$", "\\1 . ", corp_tot)
+    pb$tick()$print()
+    corp_tot <- gsub("([a-z])\\,\\s", "\\1 ,", corp_tot)
+    pb$tick()$print()
+    corp_tot <- gsub("([a-z])\\?$", "\\1 ?", corp_tot)
+    pb$tick()$print()
+    corp_tot <- gsub("([a-z])\\!$", "\\1 !", corp_tot)
+    pb$tick()$print()
+
+    corp_tot<-paste(corp_tot, collapse = ' ')
+    pb$tick()$print
+
+    return(corp_tot)
+}
+
+prep_precursor<-function(text){
+    text<-stri_trans_general(text,"Latin-ASCII")
+    text <- gsub("[µºˆ_]+", '', text, perl = TRUE)
+
+    #set to lowercase
+    text <- char_tolower(text)
+
+    #Remove URLS
+    text <- gsub("(f|ht)tp(s?):\\/\\/(.*)[.][a-z=\\?\\/]+", "<URL>", text, perl = TRUE)
+
+    #Remove Twitter @usernames and hashtags
+    text <- gsub("\\s@[a-z_]{1,20}", "<TWITTERUSER>", text, perl = TRUE)
+    text <- gsub("#[a-z0-9_]+", "<HASHTAG>", text, perl = TRUE)
+
+    badwords <- unlist(read.csv("./badwords.txt", header = FALSE, as.is = TRUE)[,1])
+    text <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(badwords, collapse = "|")), "", text, perl = TRUE)
+    text <- gsub("_|\\+|-|@|#|\\$|%|\\^|\\&|\\*|\\(|\\)|;|\\\\|\\/|<|>|\"|'|`|~|\\|", "", text, perl = TRUE)
+    text <- gsub("\\s\\s+", " ", text, perl = TRUE)
+
+    text <- gsub("([a-z])\\.\\s", "\\1 . ", text)
+    text <- gsub("([a-z])\\,\\s", "\\1 , ", text)
+    text <- gsub("([a-z])\\?\\s", "\\1 ? ", text)
+    text <- gsub("([a-z])\\!\\s", "\\1 ! ", text)
+
+    return(text)
+}
 
 prep_tensorflow<-function(text, learning_rate=0.001, n_input=3L, n_hidden = 512L){
 
