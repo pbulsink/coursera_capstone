@@ -1,4 +1,4 @@
-#' Example script to generate text from Nietzsche's writings.
+#' Example script to generate text .
 #'
 #' At least 20 epochs are required before the generated text starts sounding
 #' coherent.
@@ -21,78 +21,75 @@ library(tokenizers)
 # Parameters --------------------------------------------------------------
 
 maxlen <- 40
-datafraction <- 1
-iterations<-2
-neuralnodes<-500
-lr<-0.01
-batch_size<-512
-bychar=4
+datafraction <- 0.5
+iterations <- 2
+neuralnodes <- 500
+lr <- 0.01
+batch_size <- 512
+bychar <- 4
+epoch_splits <- 50
 
 # Data preparation --------------------------------------------------------
 
-path <- c(
-  "./data/en_US/en_US.blogs.txt",
-  "./data/en_US/en_US.news.txt",
-  "./data/en_US/en_US.twitter.txt"
-)
+path <- c("./data/en_US/en_US.blogs.txt", "./data/en_US/en_US.news.txt", "./data/en_US/en_US.twitter.txt")
 
-t1<-read_lines(path[1])
-t2<-read_lines(path[2])
-t3<-read_lines(path[3])
+t1 <- read_lines(path[1])
+t2 <- read_lines(path[2])
+t3 <- read_lines(path[3])
 
-t1<-t1[sample(1:length(t1), size = length(t1)*datafraction, replace = FALSE)]
-t2<-t2[sample(1:length(t2), size = length(t2)*datafraction, replace = FALSE)]
-t3<-t3[sample(1:length(t3), size = length(t3)*datafraction, replace = FALSE)]
+t1 <- t1[sample(1:length(t1), size = length(t1) * datafraction, replace = FALSE)]
+t2 <- t2[sample(1:length(t2), size = length(t2) * datafraction, replace = FALSE)]
+t3 <- t3[sample(1:length(t3), size = length(t3) * datafraction, replace = FALSE)]
 
-text <- c(t1, t2, t3) %>%
-  str_c(collapse = " ") %>%
-  stri_enc_toascii() %>%
-  tokenize_characters(strip_non_alphanum = FALSE, simplify = TRUE, lowercase = FALSE)
+text <- c(t1, t2, t3) %>% str_c(collapse = " ") %>%
+    stri_enc_toascii() %>%
+    tokenize_characters(strip_non_alphanum = FALSE, simplify = TRUE, lowercase = FALSE)
 
-rm(t1,t2,t3, path)
+rm(t1, t2, t3, path)
 
-text<-text[!text %in% c("\032", "\037", "\177", "\003", "\020", "\n", "\035")]
+gc(verbose = FALSE)
 
-print(sprintf("corpus length: %d", length(text)))
+text <- text[!text %in% c("\032", "\037", "\177", "\003", "\020", "\n", "\035")]
 
-chars <- text %>%
-  unique() %>%
-  sort()
+text_length <- length(text)
+print(sprintf("corpus length: %d", text_length))
 
-print(sprintf("total chars: %d", length(chars)))
+chars <- text %>% unique() %>% sort()
 
-#Text Generator because all of the text is toooooo big.
-text_generator <- function(text, chars, maxlen, batch_size=25, start = NULL, bychar=1) {
-    if(is.null(start)){
+chars_length <- length(chars)
+print(sprintf("total chars: %d", chars_length))
+
+# Text Generator because all of the text is toooooo big.
+text_generator <- function(text, chars, maxlen, batch_size = 25, start = NULL, bychar = 1) {
+    if (is.null(start)) {
         i <- sample(1:bychar, 1)
     } else {
         i <- start
     }
     function() {
         # cut the text in semi-redundant sequences of maxlen characters
-        dataset <- map(
-            seq(1, batch_size*bychar, bychar),
-            ~list(sentence = text[.x:(.x + maxlen - 1)], next_char = text[.x + maxlen])
-        )
+        dataset <- map(seq(1, batch_size * bychar, bychar),
+                       ~list(sentence = text[.x:(.x + maxlen - 1)],
+                             next_char = text[.x + maxlen]))
 
         dataset <- transpose(dataset)
 
         # vectorization
-        X <- array(0, dim = c(length(dataset$sentence), maxlen, length(chars)))
-        y <- array(0, dim = c(length(dataset$sentence), length(chars)))
+        X <- array(0, dim = c(length(dataset$sentence), maxlen, chars_length))
+        y <- array(0, dim = c(length(dataset$sentence), chars_length))
 
-        for(i in 1:length(dataset$sentence)){
+        for (i in 1:length(dataset$sentence)) {
 
-            X[i,,] <- sapply(chars, function(x){
+            X[i, , ] <- sapply(chars, function(x) {
                 as.integer(x == dataset$sentence[[i]])
             })
 
-            y[i,] <- as.integer(chars == dataset$next_char[[i]])
+            y[i, ] <- as.integer(chars == dataset$next_char[[i]])
 
         }
 
-        if (i > (length(text)-(batch_size*bychar)-maxlen)){
-            i<-sample(1:bychar, 1)
+        if (i > (text_length - (batch_size * bychar) - maxlen)) {
+            i <- sample(1:bychar, 1)
         }
 
         X <- to_numpy_array(X)
@@ -101,74 +98,83 @@ text_generator <- function(text, chars, maxlen, batch_size=25, start = NULL, byc
     }
 }
 
-#Register Text_generator
-tg<-text_generator(text, chars, maxlen = maxlen, batch_size = batch_size)
-steps_per_epoch <- floor(((length(text)-maxlen)/(batch_size * bychar))/100)
+# Register Text_generator
+tg <- text_generator(text, chars, maxlen = maxlen, batch_size = batch_size)
+steps_per_epoch <- floor(((text_length - maxlen)/(batch_size * bychar))/epoch_splits)
 
+gc(verbose = FALSE)
 # Model definition --------------------------------------------------------
 
 model <- keras_model_sequential()
 
 model %>%
-  layer_lstm(neuralnodes, input_shape = c(maxlen, length(chars))) %>%
-  layer_dense(length(chars)) %>%
-  layer_activation("softmax")
+    layer_lstm(neuralnodes, input_shape = c(maxlen, chars_length)) %>%
+    layer_dense(chars_length) %>%
+    layer_activation("softmax")
 
 optimizer <- optimizer_rmsprop(lr = lr)
 
-model %>% compile(
-  loss = "categorical_crossentropy",
-  optimizer = optimizer
-)
+model %>%
+    compile(loss = "categorical_crossentropy", optimizer = optimizer)
 
+model %>%
+    save_model_hdf5('char_based_model')
 
 # Training and results ----------------------------------------------------
 
-sample_mod <- function(preds, temperature = 1){
-  preds <- log(preds)/temperature
-  exp_preds <- exp(preds)
-  preds <- exp_preds/sum(exp(preds))
+sample_mod <- function(preds, temperature = 1) {
+    preds <- log(preds)/temperature
+    exp_preds <- exp(preds)
+    preds <- exp_preds/sum(exp(preds))
 
-  rmultinom(1, 1, preds) %>%
-    as.integer() %>%
-    which.max()
+    rmultinom(1, 1, preds) %>%
+        as.integer() %>%
+        which.max()
 }
 
-for(iteration in 1:iterations){
+for (iteration in 1:iterations) {
 
-  cat(sprintf("iteration: %02d ---------------\n\n", iteration))
+    cat(sprintf("iteration: %02d ---------------\n\n", iteration))
 
-  model %>% fit_generator(generator = tg, steps_per_epoch = steps_per_epoch, verbose = 1, epochs = 1)
+    hist <- model %>%
+        fit_generator(generator = tg,
+                      steps_per_epoch = steps_per_epoch,
+                      verbose = 1,
+                      epochs = epoch_splits)
 
-  for(diversity in c(0.2, 0.5, 1, 1.2)){
+    model %>%
+        save_model_weights_hdf5('char_based_model_weights')
 
-    cat(sprintf("diversity: %f ---------------\n\n", diversity))
+    for (diversity in c(0.2, 0.5, 1, 1.2)) {
 
-    start_index <- sample(1:(length(text) - maxlen), size = 1)
-    sentence <- text[start_index:(start_index + maxlen - 1)]
-    generated <- ""
+        cat(sprintf("diversity: %f ---------------\n\n", diversity))
 
-    for(i in 1:400){
+        start_index <- sample(1:(text_length - maxlen), size = 1)
+        sentence <- text[start_index:(start_index + maxlen - 1)]
+        generated <- ""
 
-      x <- sapply(chars, function(x){
-        as.integer(x == sentence)
-      })
-      dim(x) <- c(1, dim(x))
+        for (i in 1:400) {
 
-      preds <- predict(model, x)
-      next_index <- sample_mod(preds, diversity)
-      next_char <- chars[next_index]
+            x <- sapply(chars, function(x) {
+                as.integer(x == sentence)
+            })
+            dim(x) <- c(1, dim(x))
 
-      generated <- str_c(generated, next_char, collapse = "")
-      sentence <- c(sentence[-1], next_char)
+            preds <- predict(model, x)
+            next_index <- sample_mod(preds, diversity)
+            next_char <- chars[next_index]
 
+            generated <- str_c(generated, next_char, collapse = "")
+            sentence <- c(sentence[-1], next_char)
+
+        }
+
+        cat(generated)
+        cat("\n\n")
+
+        model %>%
+            reset_states()
     }
-
-    cat(generated)
-    cat("\n\n")
-
-    model %>% reset_states()
-  }
 }
 
 
