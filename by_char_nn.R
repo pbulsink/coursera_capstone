@@ -21,13 +21,14 @@ library(tokenizers)
 # Parameters --------------------------------------------------------------
 
 maxlen <- 40
-datafraction <- 0.5
-iterations <- 2
+datafraction <- 0.05
+valfraction <- datafraction * 0.2
+iterations <- 60
 neuralnodes <- 500
-lr <- 0.01
+lr <- 0.1
 batch_size <- 512
 bychar <- 4
-epoch_splits <- 50
+epoch_splits <- 1
 
 # Data preparation --------------------------------------------------------
 
@@ -37,24 +38,41 @@ t1 <- read_lines(path[1])
 t2 <- read_lines(path[2])
 t3 <- read_lines(path[3])
 
-t1 <- t1[sample(1:length(t1), size = length(t1) * datafraction, replace = FALSE)]
-t2 <- t2[sample(1:length(t2), size = length(t2) * datafraction, replace = FALSE)]
-t3 <- t3[sample(1:length(t3), size = length(t3) * datafraction, replace = FALSE)]
+t1 <- t1[sample(1:length(t1), size = length(t1) * valfraction, replace = FALSE)]
+t2 <- t2[sample(1:length(t2), size = length(t2) * valfraction, replace = FALSE)]
+t3 <- t3[sample(1:length(t3), size = length(t3) * valfraction, replace = FALSE)]
+
+v1 <- t1[sample(1:length(t1), size = length(t1) * valfraction, replace = FALSE)]
+v2 <- t2[sample(1:length(t2), size = length(t2) * valfraction, replace = FALSE)]
+v3 <- t3[sample(1:length(t3), size = length(t3) * valfraction, replace = FALSE)]
 
 text <- c(t1, t2, t3) %>% str_c(collapse = " ") %>%
     stri_enc_toascii() %>%
     tokenize_characters(strip_non_alphanum = FALSE, simplify = TRUE, lowercase = FALSE)
 
-rm(t1, t2, t3, path)
+val <- c(v1, v2, v3) %>% str_c(collapse = " ") %>%
+    stri_enc_toascii() %>%
+    tokenize_characters(strip_non_alphanum = FALSE, simplify = TRUE, lowercase = FALSE)
+
+rm(t1, t2, t3, v1, v2, v3, path)
 
 gc(verbose = FALSE)
 
 text <- text[!text %in% c("\032", "\037", "\177", "\003", "\020", "\n", "\035")]
+val <- val[!val %in% c("\032", "\037", "\177", "\003", "\020", "\n", "\035")]
 
 text_length <- length(text)
-print(sprintf("corpus length: %d", text_length))
+val_length <- length(val)
 
-chars <- text %>% unique() %>% sort()
+print(sprintf("corpus length: %d", text_length))
+print(sprintf("val length: %d", val_length))
+
+chars_t <- text %>% unique()
+chars_v <- val %>% unique()
+
+chars <- c(chars_t, chars_v) %>% unique() %>% sort()
+
+rm(chars_t, chars_v)
 
 chars_length <- length(chars)
 print(sprintf("total chars: %d", chars_length))
@@ -100,7 +118,9 @@ text_generator <- function(text, chars, maxlen, batch_size = 25, start = NULL, b
 
 # Register Text_generator
 tg <- text_generator(text, chars, maxlen = maxlen, batch_size = batch_size)
+vg <- text_generator(val, chars, maxlen = maxlen, batch_size = batch_size)
 steps_per_epoch <- floor(((text_length - maxlen)/(batch_size * bychar))/epoch_splits)
+steps_per_val <- floor(((val_length - maxlen)/(batch_size * bychar))/epoch_splits)
 
 gc(verbose = FALSE)
 # Model definition --------------------------------------------------------
@@ -139,8 +159,15 @@ for (iteration in 1:iterations) {
     hist <- model %>%
         fit_generator(generator = tg,
                       steps_per_epoch = steps_per_epoch,
-                      verbose = 1,
-                      epochs = epoch_splits)
+                      verbose = 2,
+                      epochs = epoch_splits,
+                      callbacks = list(
+                          callback_model_checkpoint("model_checkpoint"),
+                          callback_reduce_lr_on_plateau()
+                          )
+                      )
+
+    model %>% evaluate_generator(generator = vg, steps = steps_per_val)
 
     model %>%
         save_model_weights_hdf5('char_based_model_weights')
